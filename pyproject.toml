@@ -1,0 +1,106 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ieee-epic-stt"
+version = "0.2.0"
+description = "IEEE EPIC Project - Offline Speech-to-Text System with AI Integration"
+authors = [
+    { name = "IEEE EPIC Team", email = "epic@ieee.org" },
+]
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "vosk>=0.3.45",
+    "sounddevice>=0.4.6",
+    "numpy>=1.20.0",
+    "pyaudio",
+    "requests>=2.28.0",
+    "openai>=1.0.0",
+    "pydantic>=2.0.0",
+    "loguru>=0.7.0",
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+
+[project.scripts]
+ieee-epic = "ieee_epic.main:app"
+ieee-epic-stt = "ieee_epic.cli.stt:main"
+ieee-epic-ai = "ieee_epic.cli.ai:main"
+ieee-epic-setup = "ieee_epic.cli.setup:main"
+
+[project.urls]
+Homepage = "https://github.com/IEEE-EPIC/speech-to-text"
+Repository = "https://github.com/IEEE-EPIC/speech-to-text"
+Issues = "https://github.com/IEEE-EPIC/speech-to-text/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ieee_epic"]
+
+[tool.black]
+line-length = 88
+target-version = ["py38"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.venv
+  | \.tox
+  | build
+  | dist
+  | models
+  | vosk-*
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["ieee_epic"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers --strict-config"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "vosk.*",
+    "sounddevice.*",
+    "whisper_cpp.*",
+    "pyaudio.*"
+]
+ignore_missing_imports = true

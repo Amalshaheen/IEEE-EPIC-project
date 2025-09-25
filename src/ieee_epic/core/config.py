@@ -1,0 +1,298 @@
+"""
+Configuration management for IEEE EPIC STT system.
+
+This module uses Pydantic for type validation and settings management,
+following modern Python configuration best practices.
+"""
+
+from pathlib import Path
+from typing import Dict, List, Optional, Union
+from pydantic import BaseModel, Field, validator
+from loguru import logger
+
+
+class AudioSettings(BaseModel):
+    """Audio configuration settings."""
+    
+    sample_rate: int = Field(default=16000, description="Audio sample rate in Hz")
+    channels: int = Field(default=1, description="Number of audio channels")
+    duration: float = Field(default=5.0, description="Recording duration in seconds")
+    device_id: Optional[int] = Field(default=None, description="Audio device ID")
+    
+    @validator('sample_rate')
+    def validate_sample_rate(cls, v):
+        if v not in [8000, 16000, 22050, 44100, 48000]:
+            raise ValueError("Sample rate must be one of: 8000, 16000, 22050, 44100, 48000")
+        return v
+    
+    @validator('channels')
+    def validate_channels(cls, v):
+        if v not in [1, 2]:
+            raise ValueError("Channels must be 1 (mono) or 2 (stereo)")
+        return v
+
+
+class ModelSettings(BaseModel):
+    """STT model configuration settings."""
+    
+    models_dir: Path = Field(default=Path("models"), description="Directory for model storage")
+    english_model_path: Optional[Path] = Field(default=None, description="Path to English model")
+    malayalam_model_path: Optional[Path] = Field(default=None, description="Path to Malayalam model")
+    whisper_model_path: Optional[Path] = Field(default=None, description="Path to Whisper model")
+    
+    # Language preferences
+    default_language: str = Field(default="en", description="Default language (en/ml/auto)")
+    supported_languages: List[str] = Field(default=["en", "ml"], description="Supported languages")
+    
+    # Model URLs for automatic download
+    model_urls: Dict[str, str] = Field(default={
+        "en_small": "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip",
+        "ml_small": "https://alphacephei.com/vosk/models/vosk-model-small-ml-0.22.zip",
+    })
+    
+    def __init__(self, **data):
+        super().__init__(**data)
+        self._setup_model_paths()
+    
+    def _setup_model_paths(self):
+        """Setup default model paths if not provided."""
+        if not self.english_model_path:
+            self.english_model_path = Path("vosk-en")
+        if not self.malayalam_model_path:
+            self.malayalam_model_path = Path("vosk-ml")
+    
+    @validator('default_language')
+    def validate_default_language(cls, v, values):
+        supported = values.get('supported_languages', ['en', 'ml'])
+        if v not in supported + ['auto']:
+            raise ValueError(f"Default language must be one of: {supported + ['auto']}")
+        return v
+
+
+class AISettings(BaseModel):
+    """AI response system configuration."""
+    
+    enabled: bool = Field(default=True, description="Enable AI responses")
+    openai_api_key: Optional[str] = Field(default=None, description="OpenAI API key")
+    model: str = Field(default="gpt-3.5-turbo", description="AI model to use")
+    max_tokens: int = Field(default=150, description="Maximum tokens for response")
+    temperature: float = Field(default=0.7, description="AI response creativity")
+    
+    # Offline fallback settings
+    offline_mode: bool = Field(default=True, description="Enable offline AI responses")
+    offline_responses_file: Path = Field(
+        default=Path("data/offline_responses.json"), 
+        description="Offline responses database"
+    )
+    
+    @validator('temperature')
+    def validate_temperature(cls, v):
+        if not 0.0 <= v <= 2.0:
+            raise ValueError("Temperature must be between 0.0 and 2.0")
+        return v
+
+
+class SystemSettings(BaseModel):
+    """System and platform configuration."""
+    
+    # Platform detection
+    platform: Optional[str] = Field(default=None, description="Platform (auto-detected)")
+    is_raspberry_pi: bool = Field(default=False, description="Running on Raspberry Pi")
+    
+    # Performance settings
+    memory_limit_mb: int = Field(default=512, description="Memory limit in MB")
+    cpu_threads: int = Field(default=1, description="Number of CPU threads to use")
+    
+    # Logging configuration
+    log_level: str = Field(default="INFO", description="Logging level")
+    log_file: Optional[Path] = Field(default=None, description="Log file path")
+    
+    @validator('log_level')
+    def validate_log_level(cls, v):
+        valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        if v.upper() not in valid_levels:
+            raise ValueError(f"Log level must be one of: {valid_levels}")
+        return v.upper()
+
+
+class PathSettings(BaseModel):
+    """File and directory path configuration."""
+    
+    project_root: Path = Field(default=Path.cwd(), description="Project root directory")
+    data_dir: Path = Field(default=Path("data"), description="Data directory")
+    models_dir: Path = Field(default=Path("models"), description="Models directory")
+    logs_dir: Path = Field(default=Path("logs"), description="Logs directory")
+    temp_dir: Path = Field(default=Path("temp"), description="Temporary files directory")
+    
+    def __init__(self, **data):
+        super().__init__(**data)
+        self._ensure_directories()
+    
+    def _ensure_directories(self):
+        """Ensure all directories exist."""
+        for path in [self.data_dir, self.models_dir, self.logs_dir, self.temp_dir]:
+            if not path.is_absolute():
+                path = self.project_root / path
+            path.mkdir(parents=True, exist_ok=True)
+
+
+class Settings(BaseModel):
+    """Main configuration class for IEEE EPIC STT system."""
+    
+    # Nested settings
+    audio: AudioSettings = Field(default_factory=AudioSettings)
+    models: ModelSettings = Field(default_factory=ModelSettings)
+    ai: AISettings = Field(default_factory=AISettings)
+    system: SystemSettings = Field(default_factory=SystemSettings)
+    paths: PathSettings = Field(default_factory=PathSettings)
+    
+    # Application metadata
+    app_name: str = Field(default="IEEE EPIC STT", description="Application name")
+    version: str = Field(default="0.2.0", description="Application version")
+    
+    class Config:
+        """Pydantic configuration."""
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+        env_nested_delimiter = "__"
+        case_sensitive = False
+        
+    def __init__(self, **data):
+        super().__init__(**data)
+        self._detect_platform()
+        self._setup_logging()
+    
+    def _detect_platform(self):
+        """Auto-detect platform and configure accordingly."""
+        try:
+            with open('/proc/cpuinfo', 'r') as f:
+                cpuinfo = f.read()
+                if 'Raspberry Pi' in cpuinfo or 'BCM' in cpuinfo:
+                    self.system.is_raspberry_pi = True
+                    self.system.platform = "raspberry_pi"
+                    # Optimize for RPi
+                    self.system.memory_limit_mb = 256
+                    self.system.cpu_threads = 1
+        except FileNotFoundError:
+            # Not on Linux/RPi
+            self.system.platform = "desktop"
+            self.system.memory_limit_mb = 1024
+            self.system.cpu_threads = 2
+    
+    def _setup_logging(self):
+        """Configure logging based on settings."""
+        logger.remove()  # Remove default handler
+        
+        # Console logging
+        logger.add(
+            sink=lambda msg: print(msg, end=""),
+            level=self.system.log_level,
+            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+                   "<level>{level: <8}</level> | "
+                   "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | "
+                   "<level>{message}</level>",
+            colorize=True
+        )
+        
+        # File logging if specified
+        if self.system.log_file:
+            if not self.system.log_file.is_absolute():
+                log_path = self.paths.logs_dir / self.system.log_file
+            else:
+                log_path = self.system.log_file
+                
+            logger.add(
+                sink=str(log_path),
+                level=self.system.log_level,
+                format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} | {message}",
+                rotation="10 MB",
+                retention="1 week",
+                compression="zip"
+            )
+    
+    @classmethod
+    def load_from_file(cls, config_path: Union[str, Path]) -> "Settings":
+        """Load settings from a TOML or JSON file."""
+        config_path = Path(config_path)
+        
+        if not config_path.exists():
+            logger.warning(f"Config file not found: {config_path}. Using defaults.")
+            return cls()
+        
+        try:
+            if config_path.suffix.lower() == '.toml':
+                import tomli
+                with open(config_path, 'rb') as f:
+                    data = tomli.load(f)
+            elif config_path.suffix.lower() == '.json':
+                import json
+                with open(config_path, 'r') as f:
+                    data = json.load(f)
+            else:
+                logger.error(f"Unsupported config format: {config_path.suffix}")
+                return cls()
+            
+            return cls(**data)
+            
+        except Exception as e:
+            logger.error(f"Failed to load config from {config_path}: {e}")
+            return cls()
+    
+    def save_to_file(self, config_path: Union[str, Path]) -> bool:
+        """Save current settings to a file."""
+        config_path = Path(config_path)
+        
+        try:
+            config_data = self.dict()
+            
+            if config_path.suffix.lower() == '.json':
+                import json
+                with open(config_path, 'w') as f:
+                    json.dump(config_data, f, indent=2, default=str)
+            elif config_path.suffix.lower() == '.toml':
+                import tomli_w
+                with open(config_path, 'wb') as f:
+                    tomli_w.dump(config_data, f)
+            else:
+                logger.error(f"Unsupported config format: {config_path.suffix}")
+                return False
+            
+            logger.info(f"Configuration saved to {config_path}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to save config to {config_path}: {e}")
+            return False
+    
+    def get_model_path(self, language: str) -> Optional[Path]:
+        """Get model path for specified language."""
+        if language == "en":
+            return self.models.english_model_path
+        elif language == "ml":
+            return self.models.malayalam_model_path
+        else:
+            logger.warning(f"Unsupported language: {language}")
+            return None
+    
+    def is_model_available(self, language: str) -> bool:
+        """Check if model is available for specified language."""
+        model_path = self.get_model_path(language)
+        if model_path and model_path.exists():
+            return True
+        return False
+
+
+# Default settings instance
+default_settings = Settings()
+
+def get_settings() -> Settings:
+    """Get the global settings instance."""
+    return default_settings
+
+def update_settings(**kwargs) -> Settings:
+    """Update global settings with new values."""
+    global default_settings
+    data = default_settings.dict()
+    data.update(kwargs)
+    default_settings = Settings(**data)
+    return default_settings
