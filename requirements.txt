@@ -1,0 +1,8 @@
+vosk==0.3.45
+sounddevice==0.4.6
+numpy>=1.20.0
+whisper-cpp-python
+pyaudio
+wave
+threading
+requests
