@@ -184,9 +184,10 @@ def interactive():
 
 @app.command()
 def conversation(
-    config_file: str = typer.Option(None, "--config", "-c", help="Configuration file path")
+    config_file: str = typer.Option(None, "--config", "-c", help="Configuration file path"),
+    enable_tts: bool = typer.Option(True, "--tts/--no-tts", help="Enable TTS for AI responses")
 ):
-    """Run complete conversational AI assistant."""
+    """Run complete conversational AI assistant with optional TTS."""
     settings = Settings.load_from_file(config_file) if config_file else Settings()
     
     # Initialize systems
@@ -198,12 +199,23 @@ def conversation(
         raise typer.Exit(1)
     
     rprint("🤖 [green]IEEE EPIC Conversational AI Assistant[/green]")
-    rprint("Commands: 'listen' (start listening), 'quit' (exit)")
+    rprint("Commands:")
+    rprint("  • 'listen' - Start listening for speech")
+    rprint("  • 'speak' - Enable/disable TTS responses")
+    rprint("  • 'quit' - Exit the assistant")
     
     # Show status
     ai_status = ai_system.get_status()
     online_status = "✅ Gemini API" if ai_status['gemini_available'] else "⚠️ API Key Missing"
+    tts_status = "✅ Available" if ai_status.get('tts_available', False) else "❌ Unavailable"
     rprint(f"AI Status: {online_status}")
+    rprint(f"TTS Status: {tts_status}")
+    
+    use_tts = enable_tts and ai_system.is_tts_available()
+    if use_tts:
+        rprint("[green]🔊 TTS responses enabled[/green]")
+    else:
+        rprint("[yellow]🔇 TTS responses disabled[/yellow]")
     
     while True:
         try:
@@ -212,6 +224,16 @@ def conversation(
             if command == 'quit':
                 rprint("[yellow]👋 Goodbye![/yellow]")
                 break
+            elif command == 'speak':
+                use_tts = not use_tts
+                if use_tts and ai_system.is_tts_available():
+                    rprint("[green]🔊 TTS responses enabled[/green]")
+                elif use_tts and not ai_system.is_tts_available():
+                    rprint("[red]❌ TTS not available[/red]")
+                    use_tts = False
+                else:
+                    rprint("[yellow]🔇 TTS responses disabled[/yellow]")
+                continue
             elif command == 'listen':
                 rprint("🎤 Listening... (speak now)")
                 
@@ -224,15 +246,22 @@ def conversation(
                     if user_input:
                         rprint(f"👤 [cyan]You said:[/cyan] {user_input}")
                         
-                        # Generate AI response
-                        ai_response = ai_system.generate_response(user_input)
-                        rprint(f"🤖 [green]AI Response:[/green] {ai_response}")
+                        # Generate AI response with optional TTS
+                        if use_tts:
+                            import asyncio
+                            ai_response = asyncio.run(
+                                ai_system.generate_and_speak_response(user_input)
+                            )
+                            rprint(f"🤖🔊 [green]AI Response (spoken):[/green] {ai_response}")
+                        else:
+                            ai_response = ai_system.generate_response(user_input)
+                            rprint(f"🤖 [green]AI Response:[/green] {ai_response}")
                     else:
                         rprint("[red]❌ Could not understand speech[/red]")
                 else:
                     rprint("[red]❌ No speech detected[/red]")
             else:
-                rprint("[red]❌ Unknown command. Use 'listen' or 'quit'[/red]")
+                rprint("[red]❌ Unknown command. Use 'listen', 'speak', or 'quit'[/red]")
                 
         except KeyboardInterrupt:
             rprint("\n[yellow]👋 Goodbye![/yellow]")
@@ -334,6 +363,155 @@ def configure_online(
             
     except Exception as e:
         rprint(f"[red]❌ Configuration test failed: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command()
+def tts(
+    text: str = typer.Argument(help="Text to synthesize to speech"),
+    language: str = typer.Option("auto", "--lang", "-l", help="Language (en/ml/auto)"),
+    voice: str = typer.Option(None, "--voice", "-v", help="Voice to use"),
+    output: str = typer.Option(None, "--output", "-o", help="Save to audio file"),
+    play: bool = typer.Option(True, "--play/--no-play", help="Play audio immediately"),
+    config_file: str = typer.Option(None, "--config", "-c", help="Configuration file path")
+):
+    """Convert text to speech using TTS engine."""
+    settings = Settings.load_from_file(config_file) if config_file else Settings()
+    
+    if not settings.tts.enabled:
+        rprint("[yellow]⚠️  TTS is disabled in configuration[/yellow]")
+        settings.tts.enabled = True
+    
+    try:
+        from ieee_epic.core.tts import TTSEngine
+        import asyncio
+        
+        tts_engine = TTSEngine(settings)
+        
+        if not tts_engine.is_ready():
+            rprint("[red]❌ TTS engine not ready. Please check your configuration.[/red]")
+            raise typer.Exit(1)
+        
+        rprint(f"🔊 Synthesizing text: '{text[:50]}{'...' if len(text) > 50 else ''}'")
+        rprint(f"Language: {language} | Backend: {settings.tts.preferred_engine}")
+        
+        if output:
+            # Save to file
+            success = tts_engine.synthesize_to_file(text, output, language)
+            
+            if success:
+                rprint(f"[green]✅ Audio saved to: {output}[/green]")
+                
+                if play:
+                    rprint("🎵 Playing audio...")
+                    success_play = asyncio.run(tts_engine.speak(text, language))
+                    if not success_play:
+                        rprint("[yellow]⚠️ Audio saved but playback failed[/yellow]")
+            else:
+                rprint("[red]❌ Failed to synthesize speech[/red]")
+                raise typer.Exit(1)
+        
+        elif play:
+            # Just play audio
+            rprint("🎵 Playing audio...")
+            success = asyncio.run(tts_engine.speak(text, language))
+            
+            if success:
+                rprint("[green]✅ Speech playback completed[/green]")
+            else:
+                rprint("[red]❌ Speech playback failed[/red]")
+                raise typer.Exit(1)
+        else:
+            rprint("[yellow]❌ Either --play or --output must be specified[/yellow]")
+            raise typer.Exit(1)
+            
+    except ImportError:
+        rprint("[red]❌ TTS dependencies not installed. Run: pip install -e .[/red]")
+        raise typer.Exit(1)
+    except KeyboardInterrupt:
+        rprint("\n[yellow]TTS cancelled[/yellow]")
+    except Exception as e:
+        rprint(f"[red]❌ TTS error: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command()
+def tts_demo():
+    """Run TTS demonstration with sample texts."""
+    settings = Settings()
+    
+    if not settings.tts.enabled:
+        rprint("[yellow]⚠️  TTS is disabled in configuration, enabling for demo[/yellow]")
+        settings.tts.enabled = True
+    
+    try:
+        from ieee_epic.core.tts import TTSEngine
+        
+        tts_engine = TTSEngine(settings)
+        
+        if not tts_engine.is_ready():
+            rprint("[red]❌ TTS engine not ready. Please check your dependencies.[/red]")
+            rprint("Install with: pip install realtimetts[all] edge-tts pygame")
+            raise typer.Exit(1)
+        
+        rprint("🎤 [green]TTS Demonstration[/green]")
+        tts_engine.demo_tts()
+        
+    except ImportError:
+        rprint("[red]❌ TTS dependencies not installed. Run: pip install -e .[/red]")
+        raise typer.Exit(1)
+    except KeyboardInterrupt:
+        rprint("\n[yellow]Demo cancelled[/yellow]")
+    except Exception as e:
+        rprint(f"[red]❌ Demo error: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command()
+def voices(
+    language: str = typer.Option("en", "--lang", "-l", help="Language to show voices for"),
+    backend: str = typer.Option(None, "--backend", "-b", help="Specific backend to query")
+):
+    """List available TTS voices."""
+    settings = Settings()
+    
+    try:
+        from ieee_epic.core.tts import TTSEngine
+        
+        tts_engine = TTSEngine(settings)
+        
+        if not tts_engine.is_ready():
+            rprint("[red]❌ TTS engine not ready. Please check your dependencies.[/red]")
+            raise typer.Exit(1)
+        
+        rprint(f"🎭 [green]Available TTS Voices for {language.upper()}[/green]")
+        
+        if backend:
+            if backend not in tts_engine.backends:
+                rprint(f"[red]❌ Backend '{backend}' not available[/red]")
+                rprint(f"Available backends: {list(tts_engine.backends.keys())}")
+                raise typer.Exit(1)
+            
+            voices = tts_engine.backends[backend].get_available_voices(language)
+            rprint(f"\n[cyan]{backend}:[/cyan]")
+            for voice in voices:
+                rprint(f"  • {voice}")
+        else:
+            all_voices = tts_engine.get_available_voices(language)
+            
+            for backend_name, voices in all_voices.items():
+                rprint(f"\n[cyan]{backend_name}:[/cyan]")
+                for voice in voices:
+                    rprint(f"  • {voice}")
+        
+        if not all_voices:
+            rprint("[yellow]⚠️  No voices found for the specified language[/yellow]")
+            
+    except ImportError:
+        rprint("[red]❌ TTS dependencies not installed. Run: pip install -e .[/red]")
+        raise typer.Exit(1)
+    except Exception as e:
+        rprint(f"[red]❌ Error: {e}[/red]")
         raise typer.Exit(1)
 
 

@@ -2,9 +2,11 @@
 AI Response System for IEEE EPIC STT system using Google Gemini.
 
 This module provides intelligent response generation for recognized speech
-using Google's Gemini API with bilingual support for English and Malayalam.
+using Google's Gemini API with bilingual support for English and Malayalam,
+and integrated Text-to-Speech capabilities.
 """
 
+import asyncio
 import os
 from typing import Dict, List, Optional, Union
 from pathlib import Path
@@ -175,7 +177,7 @@ class ConversationHistory:
 
 
 class AIResponseSystem:
-    """Main AI response system using Google Gemini."""
+    """Main AI response system using Google Gemini with TTS integration."""
     
     def __init__(self, settings: Optional[Settings] = None):
         self.settings = settings or Settings()
@@ -188,6 +190,18 @@ class AIResponseSystem:
                 model=self.settings.ai.model,
                 system_instruction=self.settings.ai.system_instruction
             )
+        
+        # Initialize TTS engine
+        self.tts_engine = None
+        if self.settings.tts.enabled:
+            try:
+                from .tts import TTSEngine
+                self.tts_engine = TTSEngine(self.settings)
+                logger.info("✅ TTS engine initialized for AI responses")
+            except ImportError as e:
+                logger.error(f"Failed to import TTS engine: {e}")
+            except Exception as e:
+                logger.error(f"Failed to initialize TTS engine: {e}")
         
         # Conversation history
         self.conversation = ConversationHistory()
@@ -388,6 +402,62 @@ class AIResponseSystem:
             except Exception as e:
                 logger.error(f"Error: {e}")
     
+    async def generate_and_speak_response(self, user_input: str, use_context: bool = True) -> str:
+        """Generate AI response and speak it aloud."""
+        response = self.generate_response(user_input, use_context)
+        
+        if self.tts_engine and response:
+            try:
+                # Detect language and speak
+                language = self._detect_language(response)
+                success = await self.tts_engine.speak(response, language)
+                
+                if success:
+                    logger.success("✅ AI response spoken successfully")
+                else:
+                    logger.warning("⚠️ TTS playback failed, response generated only")
+                    
+            except Exception as e:
+                logger.error(f"TTS error: {e}")
+        
+        return response
+    
+    async def generate_response_stream_with_tts(self, user_input: str, use_context: bool = True):
+        """Generate streaming AI response with optional TTS."""
+        full_response = ""
+        
+        # Collect streaming response
+        for chunk in self.generate_response_stream(user_input, use_context):
+            full_response += chunk
+            yield chunk
+        
+        # Speak the complete response if TTS is enabled
+        if self.tts_engine and full_response:
+            try:
+                language = self._detect_language(full_response)
+                asyncio.create_task(self.tts_engine.speak(full_response, language))
+                logger.info("🔊 Speaking AI response in background")
+            except Exception as e:
+                logger.error(f"Background TTS error: {e}")
+    
+    def speak_text(self, text: str, language: str = "auto") -> bool:
+        """Speak given text using TTS engine."""
+        if not self.tts_engine:
+            logger.warning("TTS engine not available")
+            return False
+        
+        try:
+            # Run async speak method
+            success = asyncio.run(self.tts_engine.speak(text, language))
+            return success
+        except Exception as e:
+            logger.error(f"Failed to speak text: {e}")
+            return False
+    
+    def is_tts_available(self) -> bool:
+        """Check if TTS functionality is available."""
+        return self.tts_engine is not None and self.tts_engine.is_ready()
+    
     def get_status(self) -> Dict[str, any]:
         """Get AI system status."""
         gemini_available = (self.gemini_generator and 
@@ -399,5 +469,7 @@ class AIResponseSystem:
             'conversation_length': len(self.conversation.history),
             'model': self.settings.ai.model,
             'api_key_configured': bool(self.settings.ai.gemini_api_key),
-            'enabled': self.settings.ai.enabled
+            'enabled': self.settings.ai.enabled,
+            'tts_available': self.is_tts_available(),
+            'tts_enabled': self.settings.tts.enabled
         }

@@ -94,6 +94,51 @@ class ModelSettings(BaseModel):
         return v
 
 
+class TTSSettings(BaseModel):
+    """Text-to-Speech configuration settings."""
+    
+    enabled: bool = Field(default=True, description="Enable TTS functionality")
+    preferred_engine: str = Field(default="edge", description="Preferred TTS engine (edge/system/realtime)")
+    
+    # Voice settings
+    voice_en: str = Field(default="en-IN-NeerjaNeural", description="English voice (Indian accent)")
+    voice_ml: str = Field(default="ml-IN-SobhanaNeural", description="Malayalam voice")
+    voice_speed: float = Field(default=1.0, description="Speech speed (0.5-2.0)")
+    voice_volume: float = Field(default=0.8, description="Voice volume (0.0-1.0)")
+    
+    # Audio output settings
+    output_format: str = Field(default="wav", description="Audio output format (wav/mp3)")
+    sample_rate: int = Field(default=22050, description="Audio sample rate")
+    
+    # Edge TTS specific settings
+    edge_voice_quality: str = Field(default="high", description="Edge TTS quality (low/medium/high)")
+    edge_pitch: str = Field(default="0Hz", description="Voice pitch adjustment")
+    edge_rate: str = Field(default="0%", description="Speech rate adjustment")
+    
+    # RealtimeTTS settings  
+    realtime_chunk_size: int = Field(default=1024, description="Audio chunk size for streaming")
+    realtime_buffer_size: int = Field(default=4096, description="Audio buffer size")
+    
+    @validator('voice_speed')
+    def validate_voice_speed(cls, v):
+        if not 0.1 <= v <= 3.0:
+            raise ValueError("Voice speed must be between 0.1 and 3.0")
+        return v
+    
+    @validator('voice_volume') 
+    def validate_voice_volume(cls, v):
+        if not 0.0 <= v <= 1.0:
+            raise ValueError("Voice volume must be between 0.0 and 1.0")
+        return v
+    
+    @validator('preferred_engine')
+    def validate_preferred_engine(cls, v):
+        valid_engines = ['edge', 'system', 'realtime', 'coqui']
+        if v not in valid_engines:
+            raise ValueError(f"Preferred engine must be one of: {valid_engines}")
+        return v
+
+
 class AISettings(BaseModel):
     """AI response system configuration."""
     
@@ -181,6 +226,7 @@ class Settings(BaseModel):
     # Nested settings
     audio: AudioSettings = Field(default_factory=AudioSettings)
     models: ModelSettings = Field(default_factory=ModelSettings)
+    tts: TTSSettings = Field(default_factory=TTSSettings)
     ai: AISettings = Field(default_factory=AISettings)
     system: SystemSettings = Field(default_factory=SystemSettings)
     paths: PathSettings = Field(default_factory=PathSettings)
