@@ -17,6 +17,7 @@ dependencies = [
     "sounddevice>=0.4.6", 
     "numpy>=1.20.0",
     "pyaudio",
+    "tk; platform_system != 'Windows'",  # Tkinter for Linux/Mac (Windows includes it by default)
     "requests>=2.28.0",
     "google-genai>=0.8.0",
     "pydantic>=2.0.0",
