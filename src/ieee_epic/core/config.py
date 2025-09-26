@@ -50,6 +50,11 @@ class ModelSettings(BaseModel):
         "ml_small": "https://alphacephei.com/vosk/models/vosk-model-small-ml-0.22.zip",
     })
     
+    # Online STT preferences
+    use_online_stt: bool = Field(default=False, description="Enable online STT services")
+    preferred_backend: str = Field(default="vosk", description="Preferred STT backend (vosk/whisper/google_cloud)")
+    google_cloud_credentials: Optional[str] = Field(default=None, description="Path to Google Cloud credentials JSON")
+    
     def __init__(self, **data):
         super().__init__(**data)
         self._setup_model_paths()
@@ -66,6 +71,13 @@ class ModelSettings(BaseModel):
         supported = values.get('supported_languages', ['en', 'ml'])
         if v not in supported + ['auto']:
             raise ValueError(f"Default language must be one of: {supported + ['auto']}")
+        return v
+    
+    @validator('preferred_backend')
+    def validate_preferred_backend(cls, v):
+        valid_backends = ['vosk', 'whisper', 'google_cloud']
+        if v not in valid_backends:
+            raise ValueError(f"Preferred backend must be one of: {valid_backends}")
         return v
 
 

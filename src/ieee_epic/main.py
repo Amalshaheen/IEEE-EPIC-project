@@ -45,11 +45,24 @@ def status(
     stt_engine = STTEngine(settings)
     stt_status = stt_engine.get_status()
     stt_emoji = "✅" if stt_status['ready'] else "❌"
+    
+    online_status = "🌐 Online" if settings.models.use_online_stt else "📴 Offline"
+    backend_info = f"{settings.models.preferred_backend} ({online_status})"
+    
     table.add_row(
         "STT Engine",
         f"{stt_emoji} {'Ready' if stt_status['ready'] else 'Not Ready'}",
-        f"Backends: {', '.join(stt_status['backends'])}"
+        f"Backend: {backend_info}"
     )
+    
+    # Show available backends
+    if stt_status['backends']:
+        backends_str = ", ".join(stt_status['backends'])
+        table.add_row(
+            "Available Backends",
+            "📋 Listed",
+            backends_str
+        )
     
     # Languages
     for lang in settings.models.supported_languages:
@@ -94,6 +107,7 @@ def stt(
         raise typer.Exit(1)
     
     rprint(f"🎤 Starting STT recognition (Language: {language}, Duration: {duration}s)")
+    rprint(f"Backend: {settings.models.preferred_backend} ({'online' if settings.models.use_online_stt else 'offline'})")
     
     try:
         results = engine.recognize_speech(language=language)
@@ -111,6 +125,42 @@ def stt(
             
     except KeyboardInterrupt:
         rprint("\n[yellow]Recognition cancelled[/yellow]")
+
+
+@app.command()
+def stream(
+    language: str = typer.Option("auto", "--lang", "-l", help="Language (en/ml/auto)"),
+    config_file: str = typer.Option(None, "--config", "-c", help="Configuration file path")
+):
+    """Run real-time streaming speech recognition (requires Google Cloud backend)."""
+    settings = Settings.load_from_file(config_file) if config_file else Settings()
+    
+    # Enable online STT and set Google Cloud as preferred
+    settings.models.use_online_stt = True
+    settings.models.preferred_backend = "google_cloud"
+    
+    engine = STTEngine(settings)
+    
+    if not engine.is_ready():
+        rprint("[red]❌ STT engine not ready. Please check your models.[/red]")
+        raise typer.Exit(1)
+    
+    if 'google_cloud' not in engine.backends:
+        rprint("[red]❌ Streaming requires Google Cloud Speech backend.[/red]")
+        rprint("Please configure your Google Cloud credentials and enable online STT.")
+        raise typer.Exit(1)
+    
+    rprint(f"🌊 [green]Starting streaming STT recognition[/green]")
+    rprint(f"Language: {language} | Press Ctrl+C to stop")
+    rprint("Speak into your microphone...")
+    
+    try:
+        for transcript in engine.stream_recognize(language=language):
+            if transcript.strip():
+                rprint(f"📝 [cyan]{transcript}[/cyan]")
+                
+    except KeyboardInterrupt:
+        rprint("\n[yellow]Streaming stopped by user[/yellow]")
 
 
 @app.command()

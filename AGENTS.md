@@ -1,24 +1,38 @@
 # AGENTS.md
 
 ## Project Overview
-IEEE EPIC Speech-to-Text system with Google Gemini AI-powered responses. Python package with CLI interface supporting Malayalam and English languages. Designed for both desktop and Raspberry Pi deployment with intelligent bilingual AI interactions.
+IEEE EPIC Speech-to-Text system with Google Gemini AI-powered responses and advanced online STT capabilities. Python package with CLI interface supporting Malayalam and English languages. Designed for both desktop and Raspberry Pi deployment with intelligent bilingual AI interactions and real-time streaming recognition.
+
+## Key Features
+- **Hybrid STT Architecture**: Offline (Vosk, Whisper) and Online (Google Cloud Speech-to-Text) backends
+- **Real-time Streaming**: Continuous speech recognition with live transcription  
+- **Intelligent Fallback**: Automatic fallback from online to offline backends
+- **Bilingual Support**: Optimized English and Malayalam recognition
+- **Google Gemini Integration**: AI-powered conversational responses
+- **Cross-platform**: Desktop and Raspberry Pi optimized
 
 ## Setup Commands
 ```bash
 # Install in development mode (recommended)
 python3 -m pip install -e .
 
-# Install with optional dev dependencies
+# Install with optional dev dependencies  
 python3 -m pip install -e ".[dev]"
 
 # Install dependencies only
 python3 -m pip install -r requirements.txt
+
+# Install Google Cloud Speech for online STT
+python3 -m pip install google-cloud-speech
 
 # Setup system components (models, audio)
 ieee-epic setup
 
 # Check system status
 ieee-epic status
+
+# Test online STT configuration
+python3 test_online_stt.py
 ```
 
 ## Development Environment
@@ -55,12 +69,15 @@ vosk-en/               # English Vosk model (downloaded)
 - Error handling with graceful fallbacks
 
 ## Key Classes and Components
-- `Settings` (config.py): Pydantic configuration with platform detection and Gemini API settings
-- `STTEngine` (stt.py): Multi-backend speech recognition with fallback
+- `Settings` (config.py): Enhanced Pydantic configuration with online STT settings and Google Cloud credentials
+- `STTEngine` (stt.py): Multi-backend speech recognition with streaming support and intelligent fallback
+- `GoogleCloudSTTBackend` (stt.py): Cloud-based STT with real-time streaming capabilities
+- `VoskSTTBackend` (stt.py): Offline STT backend (Enhanced)
+- `WhisperSTTBackend` (stt.py): Offline STT backend (Enhanced)
 - `AIResponseSystem` (ai_response.py): Google Gemini-powered bilingual response generation
 - `GeminiResponseGenerator` (ai_response.py): Direct Gemini API integration with streaming support
-- `AudioRecorder` (stt.py): Audio capture and preprocessing
-- Main CLI app uses Typer with Rich console output
+- `AudioRecorder` (stt.py): Enhanced audio capture with streaming support for real-time recognition
+- Main CLI app uses Typer with Rich console output and new streaming commands
 
 ## Testing Instructions
 ```bash
@@ -85,9 +102,10 @@ ieee-epic demo
 ## Build and Run Commands  
 ```bash
 # CLI commands available after installation
-ieee-epic status        # System status and health check
-ieee-epic stt          # Speech-to-text recognition
-ieee-epic interactive  # Interactive STT mode
+ieee-epic status        # System status and backend information
+ieee-epic stt          # Speech-to-text recognition (offline/online)
+ieee-epic stream       # Real-time streaming STT (Google Cloud)
+ieee-epic interactive  # Interactive STT mode with streaming support
 ieee-epic conversation # Full conversational AI
 ieee-epic demo         # AI response testing
 ieee-epic setup        # System setup and model downloads
@@ -109,6 +127,9 @@ python3 -m build --wheel
 python3 -m pytest tests/
 python3 -m pytest --cov=src/ieee_epic
 
+# Test online STT specifically
+python3 test_online_stt.py
+
 # Code quality checks
 python3 -m black src/ tests/
 python3 -m isort src/ tests/
@@ -127,13 +148,14 @@ python main.py         # Shows help and status
 - Default config created on first run
 
 ## Dependencies and Backends
-- **STT Backends**: Vosk (primary), Whisper (optional fallback)
+- **STT Backends**: Vosk (offline primary), Whisper (offline fallback), Google Cloud Speech (online primary)
 - **AI Responses**: Google Gemini API (online), intelligent fallbacks (offline)
-- **Audio**: sounddevice, pyaudio for capture
+- **Audio**: sounddevice, pyaudio for capture and streaming
 - **CLI**: Typer, Rich for modern interface
 - **Config**: Pydantic v2 for validation
 - **Logging**: loguru with rotation
 - **AI Integration**: google-genai SDK for Gemini API
+- **Online STT**: google-cloud-speech for streaming recognition
 
 ## Error Handling Patterns
 - All engines implement graceful fallback (STT: Vosk → Whisper, AI: Gemini → Fallback responses)
