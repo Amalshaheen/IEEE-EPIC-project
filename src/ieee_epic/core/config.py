@@ -52,8 +52,13 @@ class ModelSettings(BaseModel):
     
     # Online STT preferences
     use_online_stt: bool = Field(default=False, description="Enable online STT services")
-    preferred_backend: str = Field(default="vosk", description="Preferred STT backend (vosk/whisper/google_cloud)")
-    google_cloud_credentials: Optional[str] = Field(default=None, description="Path to Google Cloud credentials JSON")
+    preferred_backend: str = Field(default="vosk", description="Preferred STT backend (vosk/whisper/deepgram)")
+    
+    # Deepgram settings
+    deepgram_api_key: Optional[str] = Field(default=None, description="Deepgram API key")
+    deepgram_model: str = Field(default="nova-2", description="Deepgram model to use")
+    deepgram_language: str = Field(default="en-US", description="Deepgram language code")
+    enable_streaming: bool = Field(default=True, description="Enable real-time streaming STT")
     
     def __init__(self, **data):
         super().__init__(**data)
@@ -75,9 +80,17 @@ class ModelSettings(BaseModel):
     
     @validator('preferred_backend')
     def validate_preferred_backend(cls, v):
-        valid_backends = ['vosk', 'whisper', 'google_cloud']
+        valid_backends = ['vosk', 'whisper', 'deepgram']
         if v not in valid_backends:
             raise ValueError(f"Preferred backend must be one of: {valid_backends}")
+        return v
+    
+    @validator('deepgram_model')
+    def validate_deepgram_model(cls, v):
+        valid_models = ['nova-2', 'nova', 'enhanced', 'base', 'whisper']
+        if v not in valid_models:
+            logger.warning(f"Unknown Deepgram model: {v}. Using default.")
+            return "nova-2"
         return v
 
 

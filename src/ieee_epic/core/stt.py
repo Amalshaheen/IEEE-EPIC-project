@@ -41,155 +41,201 @@ class STTBackend(ABC):
         pass
 
 
-class GoogleCloudSTTBackend(STTBackend):
-    """Google Cloud Speech-to-Text backend implementation with streaming support."""
+class DeepgramSTTBackend(STTBackend):
+    """Deepgram Speech-to-Text backend with real-time streaming support."""
     
     def __init__(self, settings: Settings):
         self.settings = settings
         self._client = None
-        self._streaming_config = None
+        self._websocket = None
         self._initialize_client()
     
     def _initialize_client(self):
-        """Initialize Google Cloud Speech client."""
+        """Initialize Deepgram client."""
         try:
-            from google.cloud import speech
-            from google.api_core import client_options
-            import os
+            from deepgram import DeepgramClient, PrerecordedOptions, LiveOptions
             
-            # Set up credentials if provided
-            if self.settings.models.google_cloud_credentials:
-                os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(
-                    self.settings.models.google_cloud_credentials
-                )
-            
-            # Initialize client with optional regional endpoint
-            self._client = speech.SpeechClient()
-            
-            logger.success("✅ Google Cloud Speech client initialized successfully")
+            api_key = self.settings.models.deepgram_api_key
+            if not api_key:
+                logger.error("Deepgram API key not provided. Set deepgram_api_key in settings.")
+                return
+                
+            self._client = DeepgramClient(api_key)
+            logger.success("✅ Deepgram client initialized successfully")
             
         except ImportError:
-            logger.error("Google Cloud Speech library not available. Please install: pip install google-cloud-speech")
+            logger.error("Deepgram SDK not available. Please install: pip install deepgram-sdk")
         except Exception as e:
-            logger.error(f"Failed to initialize Google Cloud Speech client: {e}")
+            logger.error(f"Failed to initialize Deepgram client: {e}")
     
     def recognize(self, audio_data: np.ndarray, language: str = "en") -> str:
-        """Recognize speech using Google Cloud Speech-to-Text."""
+        """Recognize speech using Deepgram prerecorded API."""
         if not self._client:
             return ""
         
         try:
-            from google.cloud import speech
+            from deepgram import PrerecordedOptions, FileSource
             
             # Convert numpy array to audio content
             audio_int16 = (audio_data * 32767).astype(np.int16)
-            audio_content = audio_int16.tobytes()
+            audio_bytes = audio_int16.tobytes()
             
             # Map language codes
             language_map = {
                 "en": "en-US",
-                "ml": "ml-IN",  # Malayalam (India)
-                "auto": "en-US"  # Default to English for auto
+                "ml": "en-IN",  # Use English-India as closest for Malayalam
+                "auto": "en-US"
             }
             language_code = language_map.get(language, "en-US")
             
-            # Configure recognition request
-            audio = speech.RecognitionAudio(content=audio_content)
-            config = speech.RecognitionConfig(
-                encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
-                sample_rate_hertz=self.settings.audio.sample_rate,
-                language_code=language_code,
-                model="latest_long",  # Use latest model for better accuracy
-                use_enhanced=True,    # Enhanced model for better quality
-                enable_automatic_punctuation=True,
-                audio_channel_count=self.settings.audio.channels,
+            # Configure recognition options
+            options = PrerecordedOptions(
+                model=self.settings.models.deepgram_model,
+                language=language_code,
+                smart_format=True,
+                punctuate=True,
+                diarize=False,
+                encoding="linear16",
+                channels=self.settings.audio.channels,
+                sample_rate=self.settings.audio.sample_rate,
             )
             
+            # Prepare audio source
+            source = {
+                "buffer": audio_bytes,
+                "mimetype": "audio/wav"
+            }
+            
             # Perform recognition
-            response = self._client.recognize(config=config, audio=audio)
+            response = self._client.listen.prerecorded.v("1").transcribe_file(
+                source, options
+            )
             
             # Extract best result
-            for result in response.results:
-                if result.alternatives:
-                    transcript = result.alternatives[0].transcript.strip()
-                    confidence = result.alternatives[0].confidence
+            if response.results and response.results.channels:
+                alternatives = response.results.channels[0].alternatives
+                if alternatives:
+                    transcript = alternatives[0].transcript.strip()
+                    confidence = alternatives[0].confidence
                     logger.info(f"Recognition confidence: {confidence:.2f}")
                     return transcript
             
             return ""
             
         except Exception as e:
-            logger.error(f"Google Cloud Speech recognition failed: {e}")
+            logger.error(f"Deepgram recognition failed: {e}")
             return ""
     
     def stream_recognize(self, audio_generator: Generator[bytes, None, None], language: str = "en") -> Iterator[str]:
-        """Perform streaming speech recognition."""
+        """Perform streaming speech recognition using Deepgram WebSocket."""
         if not self._client:
             return
         
         try:
-            from google.cloud import speech
+            from deepgram import LiveOptions, LiveTranscriptionEvents
+            import asyncio
+            import threading
             
             # Map language codes
             language_map = {
                 "en": "en-US",
-                "ml": "ml-IN",
+                "ml": "en-IN",
                 "auto": "en-US"
             }
             language_code = language_map.get(language, "en-US")
             
-            # Configure streaming recognition
-            config = speech.RecognitionConfig(
-                encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
-                sample_rate_hertz=self.settings.audio.sample_rate,
-                language_code=language_code,
-                model="latest_long",
-                use_enhanced=True,
-                enable_automatic_punctuation=True,
-                audio_channel_count=self.settings.audio.channels,
-            )
-            
-            streaming_config = speech.StreamingRecognitionConfig(
-                config=config,
+            # Configure live options
+            options = LiveOptions(
+                model=self.settings.models.deepgram_model,
+                language=language_code,
+                smart_format=True,
+                punctuate=True,
                 interim_results=True,
-                single_utterance=False,
+                encoding="linear16",
+                channels=self.settings.audio.channels,
+                sample_rate=self.settings.audio.sample_rate,
             )
             
-            # Create streaming requests
-            def request_generator():
-                for chunk in audio_generator:
-                    yield speech.StreamingRecognizeRequest(audio_content=chunk)
+            # Create result queue for thread communication
+            result_queue = queue.Queue()
             
-            # Perform streaming recognition
-            responses = self._client.streaming_recognize(
-                config=streaming_config,
-                requests=request_generator()
-            )
+            def run_streaming():
+                """Run streaming in async context."""
+                async def streaming_session():
+                    try:
+                        # Get live connection
+                        dg_connection = self._client.listen.asyncwebsocket.v("1")
+                        
+                        async def on_message(self, result, **kwargs):
+                            sentence = result.channel.alternatives[0].transcript
+                            if len(sentence) == 0:
+                                return
+                            
+                            if result.is_final:
+                                result_queue.put(("final", sentence))
+                            else:
+                                result_queue.put(("interim", sentence))
+                        
+                        async def on_error(self, error, **kwargs):
+                            result_queue.put(("error", str(error)))
+                        
+                        # Set up event handlers
+                        dg_connection.on(LiveTranscriptionEvents.Transcript, on_message)
+                        dg_connection.on(LiveTranscriptionEvents.Error, on_error)
+                        
+                        # Start connection
+                        await dg_connection.start(options)
+                        
+                        # Send audio data
+                        for audio_chunk in audio_generator:
+                            if len(audio_chunk) > 0:
+                                await dg_connection.send(audio_chunk)
+                                await asyncio.sleep(0.01)  # Small delay to prevent overwhelming
+                        
+                        # Finish connection
+                        await dg_connection.finish()
+                        
+                    except Exception as e:
+                        result_queue.put(("error", str(e)))
+                
+                # Run the async session
+                asyncio.run(streaming_session())
             
-            # Process responses
-            for response in responses:
-                if not response.results:
-                    continue
-                
-                result = response.results[0]
-                if not result.alternatives:
-                    continue
-                
-                transcript = result.alternatives[0].transcript
-                
-                if result.is_final:
-                    logger.info(f"Final: {transcript}")
-                    yield transcript
-                else:
-                    logger.debug(f"Interim: {transcript}")
-                    # Optionally yield interim results
-                    # yield f"[interim] {transcript}"
+            # Start streaming in separate thread
+            streaming_thread = threading.Thread(target=run_streaming)
+            streaming_thread.daemon = True
+            streaming_thread.start()
+            
+            # Yield results from queue
+            while streaming_thread.is_alive():
+                try:
+                    result_type, content = result_queue.get(timeout=1.0)
                     
+                    if result_type == "final":
+                        logger.info(f"Final: {content}")
+                        yield content
+                    elif result_type == "interim":
+                        logger.debug(f"Interim: {content}")
+                        # Optionally yield interim results
+                        # yield f"[interim] {content}"
+                    elif result_type == "error":
+                        logger.error(f"Streaming error: {content}")
+                        break
+                        
+                except queue.Empty:
+                    continue
+                except Exception as e:
+                    logger.error(f"Result processing error: {e}")
+                    break
+            
+            # Clean up
+            streaming_thread.join(timeout=1.0)
+            
         except Exception as e:
             logger.error(f"Streaming recognition failed: {e}")
     
     def is_available(self, language: str = "en") -> bool:
-        """Check if Google Cloud Speech is available."""
+        """Check if Deepgram is available."""
         return self._client is not None
     
     def get_backend_type(self) -> str:
@@ -446,12 +492,12 @@ class STTEngine:
     
     def _initialize_backends(self):
         """Initialize all available STT backends."""
-        # Google Cloud backend (online)
+        # Deepgram backend (online)
         if self.settings.models.use_online_stt:
-            google_backend = GoogleCloudSTTBackend(self.settings)
-            if google_backend.is_available():
-                self.backends['google_cloud'] = google_backend
-                logger.info("✅ Google Cloud Speech backend initialized")
+            deepgram_backend = DeepgramSTTBackend(self.settings)
+            if deepgram_backend.is_available():
+                self.backends['deepgram'] = deepgram_backend
+                logger.info("✅ Deepgram Speech backend initialized")
         
         # Vosk backend (offline)
         vosk_backend = VoskSTTBackend(self.settings)
@@ -476,8 +522,8 @@ class STTEngine:
             return self.backends[preferred]
         
         # Fallback priority: online first if enabled, then offline
-        if self.settings.models.use_online_stt and 'google_cloud' in self.backends:
-            return self.backends['google_cloud']
+        if self.settings.models.use_online_stt and 'deepgram' in self.backends:
+            return self.backends['deepgram']
         elif 'vosk' in self.backends:
             return self.backends['vosk']
         elif 'whisper' in self.backends:
@@ -561,8 +607,8 @@ class STTEngine:
             return
         
         # Check if backend supports streaming
-        if not isinstance(preferred_backend, GoogleCloudSTTBackend):
-            logger.warning("Streaming only supported with Google Cloud backend")
+        if not isinstance(preferred_backend, DeepgramSTTBackend):
+            logger.warning("Streaming only supported with Deepgram backend")
             return
         
         try:
@@ -587,7 +633,7 @@ class STTEngine:
         # Priority order based on backend preference
         preferred = self.settings.models.preferred_backend
         priority_orders = {
-            'google_cloud': [f'en_{preferred}', f'ml_{preferred}', 'en_vosk', 'ml_vosk'],
+            'deepgram': [f'en_{preferred}', f'ml_{preferred}', 'en_vosk', 'ml_vosk'],
             'vosk': ['en_vosk', 'ml_vosk', f'en_{preferred}', f'ml_{preferred}'],
             'whisper': ['en_whisper', 'ml_whisper', 'en_vosk', 'ml_vosk']
         }
@@ -629,7 +675,7 @@ class STTEngine:
                     logger.info("👋 Goodbye!")
                     break
                 elif command == 'stream':
-                    if 'google_cloud' in self.backends:
+                    if 'deepgram' in self.backends:
                         logger.info("🌊 Starting streaming mode (press Ctrl+C to stop)...")
                         try:
                             for transcript in self.stream_recognize('auto'):
@@ -638,7 +684,7 @@ class STTEngine:
                         except KeyboardInterrupt:
                             logger.info("Streaming stopped by user")
                     else:
-                        logger.warning("Streaming requires Google Cloud backend")
+                        logger.warning("Streaming requires Deepgram backend")
                 elif command in ['en', 'ml', 'auto']:
                     results = self.recognize_speech(language=command)
                     

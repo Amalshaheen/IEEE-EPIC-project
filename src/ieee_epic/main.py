@@ -130,14 +130,19 @@ def stt(
 @app.command()
 def stream(
     language: str = typer.Option("auto", "--lang", "-l", help="Language (en/ml/auto)"),
+    backend: str = typer.Option("deepgram", "--backend", "-b", help="STT backend (deepgram/auto)"),
     config_file: str = typer.Option(None, "--config", "-c", help="Configuration file path")
 ):
-    """Run real-time streaming speech recognition (requires Google Cloud backend)."""
+    """Run real-time streaming speech recognition (requires Deepgram backend)."""
     settings = Settings.load_from_file(config_file) if config_file else Settings()
     
-    # Enable online STT and set Google Cloud as preferred
+    # Enable online STT and set preferred backend
     settings.models.use_online_stt = True
-    settings.models.preferred_backend = "google_cloud"
+    if backend == "auto":
+        # Keep existing preferred backend
+        pass
+    else:
+        settings.models.preferred_backend = backend
     
     engine = STTEngine(settings)
     
@@ -145,14 +150,15 @@ def stream(
         rprint("[red]❌ STT engine not ready. Please check your models.[/red]")
         raise typer.Exit(1)
     
-    if 'google_cloud' not in engine.backends:
-        rprint("[red]❌ Streaming requires Google Cloud Speech backend.[/red]")
-        rprint("Please configure your Google Cloud credentials and enable online STT.")
+    if 'deepgram' not in engine.backends:
+        rprint("[red]❌ Streaming requires Deepgram backend.[/red]")
+        rprint("Please set DEEPGRAM_API_KEY environment variable and enable online STT.")
+        rprint("Example: export DEEPGRAM_API_KEY=your_api_key")
         raise typer.Exit(1)
     
-    rprint(f"🌊 [green]Starting streaming STT recognition[/green]")
-    rprint(f"Language: {language} | Press Ctrl+C to stop")
-    rprint("Speak into your microphone...")
+    rprint(f"🌊 [green]Starting streaming STT recognition with Deepgram[/green]")
+    rprint(f"Language: {language} | Backend: {settings.models.preferred_backend}")
+    rprint("Press Ctrl+C to stop | Speak into your microphone...")
     
     try:
         for transcript in engine.stream_recognize(language=language):
@@ -261,6 +267,73 @@ def setup(
         rprint("[green]✅ Setup completed successfully![/green]")
     else:
         rprint("[red]❌ Setup failed. Please check the logs.[/red]")
+        raise typer.Exit(1)
+
+
+@app.command()
+def configure_online(
+    provider: str = typer.Option("deepgram", "--provider", "-p", help="Online STT provider (deepgram)"),
+    api_key: str = typer.Option(None, "--api-key", help="API key for the provider"),
+    save_config: bool = typer.Option(True, "--save/--no-save", help="Save configuration to file")
+):
+    """Configure online STT services (Deepgram)."""
+    rprint("🌐 [green]Online STT Configuration[/green]")
+    
+    if provider not in ["deepgram"]:
+        rprint(f"[red]❌ Unsupported provider: {provider}[/red]")
+        rprint("Supported providers: deepgram")
+        raise typer.Exit(1)
+    
+    # Get API key if not provided
+    if not api_key:
+        if provider == "deepgram":
+            rprint("🔑 Deepgram API Key Required")
+            rprint("Get your free API key from: https://console.deepgram.com/")
+            api_key = typer.prompt("Enter your Deepgram API key", hide_input=True)
+    
+    # Create settings with online STT enabled
+    settings = Settings()
+    settings.models.use_online_stt = True
+    settings.models.preferred_backend = provider
+    
+    if provider == "deepgram":
+        settings.models.deepgram_api_key = api_key
+        settings.models.deepgram_model = "nova-2"
+        settings.models.deepgram_language = "en-US"
+        settings.models.enable_streaming = True
+    
+    # Test the configuration
+    rprint("🧪 Testing configuration...")
+    try:
+        engine = STTEngine(settings)
+        
+        if provider in engine.backends:
+            rprint(f"[green]✅ {provider.title()} backend initialized successfully![/green]")
+            
+            # Show environment variable setup
+            if provider == "deepgram":
+                rprint("\n📋 [yellow]Environment Variable Setup:[/yellow]")
+                rprint(f"export DEEPGRAM_API_KEY='{api_key}'")
+                rprint("\nAdd this to your ~/.bashrc or ~/.zshrc for persistence.")
+            
+            # Save configuration if requested
+            if save_config:
+                config_path = Path("ieee_epic_config.json")
+                # Don't save API keys to config files for security
+                settings.models.deepgram_api_key = None
+                
+                if settings.save_to_file(config_path):
+                    rprint(f"[green]✅ Configuration saved to {config_path}[/green]")
+                    rprint("[yellow]Note: API keys are not saved to config files for security.[/yellow]")
+                    rprint("Use environment variables for API keys.")
+            
+        else:
+            rprint(f"[red]❌ Failed to initialize {provider} backend[/red]")
+            rprint("Check your API key and internet connection.")
+            raise typer.Exit(1)
+            
+    except Exception as e:
+        rprint(f"[red]❌ Configuration test failed: {e}[/red]")
         raise typer.Exit(1)
 
 
