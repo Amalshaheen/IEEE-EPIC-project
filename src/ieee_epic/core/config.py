@@ -73,22 +73,36 @@ class AISettings(BaseModel):
     """AI response system configuration."""
     
     enabled: bool = Field(default=True, description="Enable AI responses")
-    openai_api_key: Optional[str] = Field(default=None, description="OpenAI API key")
-    model: str = Field(default="gpt-3.5-turbo", description="AI model to use")
+    gemini_api_key: Optional[str] = Field(default=None, description="Google Gemini API key")
+    model: str = Field(default="gemini-2.0-flash-001", description="Gemini model to use")
     max_tokens: int = Field(default=150, description="Maximum tokens for response")
     temperature: float = Field(default=0.7, description="AI response creativity")
     
-    # Offline fallback settings
-    offline_mode: bool = Field(default=True, description="Enable offline AI responses")
-    offline_responses_file: Path = Field(
-        default=Path("data/offline_responses.json"), 
-        description="Offline responses database"
+    # System instruction for bilingual support
+    system_instruction: str = Field(
+        default="You are a helpful AI assistant for the IEEE EPIC project. "
+                "You can respond in both English and Malayalam. Keep responses concise and friendly. "
+                "If the input is in Malayalam, try to respond in Malayalam when appropriate.",
+        description="System instruction for the AI model"
     )
     
     @validator('temperature')
     def validate_temperature(cls, v):
         if not 0.0 <= v <= 2.0:
             raise ValueError("Temperature must be between 0.0 and 2.0")
+        return v
+    
+    @validator('model')
+    def validate_model(cls, v):
+        valid_models = [
+            "gemini-2.0-flash-001",
+            "gemini-2.0-flash-002", 
+            "gemini-1.5-flash-001",
+            "gemini-1.5-pro-001"
+        ]
+        if v not in valid_models:
+            logger.warning(f"Unknown model: {v}. Using default.")
+            return "gemini-2.0-flash-001"
         return v
 
 

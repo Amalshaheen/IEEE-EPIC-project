@@ -65,10 +65,12 @@ def status(
     # AI System
     ai_system = AIResponseSystem(settings)
     ai_status = ai_system.get_status()
-    ai_emoji = "✅" if ai_status['online_available'] else "🔄"
+    ai_emoji = "✅" if ai_status['gemini_available'] else "⚠️"
+    ai_status_text = "Gemini Connected" if ai_status['gemini_available'] else "API Key Missing"
+    
     table.add_row(
         "AI Responses",
-        f"{ai_emoji} {'Online+Offline' if ai_status['online_available'] else 'Offline Only'}",
+        f"{ai_emoji} {ai_status_text}",
         f"Model: {ai_status['model']}"
     )
     
@@ -144,7 +146,7 @@ def conversation(
     
     # Show status
     ai_status = ai_system.get_status()
-    online_status = "✅ Online" if ai_status['online_available'] else "🔄 Offline Only"
+    online_status = "✅ Gemini API" if ai_status['gemini_available'] else "⚠️ API Key Missing"
     rprint(f"AI Status: {online_status}")
     
     while True:

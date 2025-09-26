@@ -4,7 +4,7 @@ numpy>=1.20.0
 # whisper-cpp-python  # Optional - requires CMake/build tools
 pyaudio
 requests>=2.28.0
-openai>=1.0.0
+google-genai>=0.8.0
 pydantic>=2.0.0
 loguru>=0.7.0
 typer>=0.9.0

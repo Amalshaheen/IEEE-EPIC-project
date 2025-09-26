@@ -1,7 +1,7 @@
 # AGENTS.md
 
 ## Project Overview
-IEEE EPIC Speech-to-Text system with AI-powered responses. Python package with CLI interface supporting Malayalam and English languages. Designed for both desktop and Raspberry Pi deployment.
+IEEE EPIC Speech-to-Text system with Google Gemini AI-powered responses. Python package with CLI interface supporting Malayalam and English languages. Designed for both desktop and Raspberry Pi deployment with intelligent bilingual AI interactions.
 
 ## Setup Commands
 ```bash
@@ -55,9 +55,10 @@ vosk-en/               # English Vosk model (downloaded)
 - Error handling with graceful fallbacks
 
 ## Key Classes and Components
-- `Settings` (config.py): Pydantic configuration with platform detection
+- `Settings` (config.py): Pydantic configuration with platform detection and Gemini API settings
 - `STTEngine` (stt.py): Multi-backend speech recognition with fallback
-- `AIResponseSystem` (ai_response.py): Bilingual response generation
+- `AIResponseSystem` (ai_response.py): Google Gemini-powered bilingual response generation
+- `GeminiResponseGenerator` (ai_response.py): Direct Gemini API integration with streaming support
 - `AudioRecorder` (stt.py): Audio capture and preprocessing
 - Main CLI app uses Typer with Rich console output
 
@@ -127,17 +128,19 @@ python main.py         # Shows help and status
 
 ## Dependencies and Backends
 - **STT Backends**: Vosk (primary), Whisper (optional fallback)
-- **AI Responses**: OpenAI API (online), pattern-based (offline)
+- **AI Responses**: Google Gemini API (online), intelligent fallbacks (offline)
 - **Audio**: sounddevice, pyaudio for capture
 - **CLI**: Typer, Rich for modern interface
 - **Config**: Pydantic v2 for validation
 - **Logging**: loguru with rotation
+- **AI Integration**: google-genai SDK for Gemini API
 
 ## Error Handling Patterns
-- All engines implement graceful fallback (STT: Vosk → Whisper, AI: Online → Offline)
+- All engines implement graceful fallback (STT: Vosk → Whisper, AI: Gemini → Fallback responses)
 - Configuration validation with helpful error messages
 - Audio device auto-detection with fallbacks
 - Platform-specific optimizations (memory, CPU usage)
+- Intelligent language detection for bilingual fallbacks
 
 ## Performance Considerations
 - Lazy loading of STT models (memory efficiency)
@@ -147,10 +150,11 @@ python main.py         # Shows help and status
 - Background processing for long-running tasks
 
 ## Security Notes
-- OpenAI API key via environment variable only
+- Gemini API key via environment variable only
 - No API keys stored in config files
 - Audio data processed locally (offline capable)
 - No network requirements for basic STT functionality
+- Fallback responses when API unavailable
 
 ## Raspberry Pi Specific Instructions
 - See `README_RPi.md` for detailed Pi setup
