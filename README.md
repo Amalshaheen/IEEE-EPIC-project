@@ -1,142 +1,58 @@
-# IEEE EPIC Speech-to-Text System
+# IEEE EPIC Conversational Assistant (EN + ML)
 
-## 🎯 Overview
-A professional Speech-to-Text system with AI-powered responses, supporting Malayalam and English languages. Built with modern Python architecture and designed for both desktop and Raspberry Pi deployment.
+Minimal, online-only voice assistant: click Start, speak in English or Malayalam, it listens, asks Gemini, speaks a short child-friendly reply, and keeps listening.
 
-## 🚀 **Quick Start**
+## Quick start
+
 ```bash
-# Show system status
-ieee-epic status
+# Create/activate a venv (recommended)
+python3 -m venv .venv
+. .venv/bin/activate
 
-# Interactive speech recognition
-ieee-epic stt
+# Install dependencies
+python -m pip install -r requirements.txt
 
-# AI conversation mode  
-ieee-epic conversation
+# Set credentials
+export GOOGLE_API_KEY="<your-gemini-api-key>"
+export GOOGLE_APPLICATION_CREDENTIALS="/absolute/path/to/gcloud-service-account.json"
 
-# Test AI responses
-ieee-epic demo
-
-# Setup system
-ieee-epic setup
+# Run the UI
+python epic_tk_ui.py
 ```
 
-## 📁 **Project Structure**
+## What’s inside
+
 ```
-IEEE-EPIC-project/
-├── 📦 src/ieee_epic/           # Main package
-│   ├── 🎯 main.py              # Modern CLI with Typer & Rich
-│   ├── ⚙️ core/                # Core business logic
-│   │   ├── config.py           # Pydantic configuration
-│   │   ├── stt.py             # Multi-backend STT engine
-│   │   └── ai_response.py     # AI response system
-│   └── 🛠️ utils/               # Utilities
-│       ├── setup.py           # System setup
-│       └── audio.py           # Audio testing
-├── 🧪 tests/                  # Test suite
-├── 📁 data/                   # AI response data
-├── 📁 models/                 # STT models storage
-├── 📁 vosk-en/                # English STT model
-├── 📝 pyproject.toml          # Project configuration
-├── 📋 requirements.txt        # Dependencies
-├── 🤖 AGENTS.md               # AI agents documentation
-├── 🍓 README_RPi.md           # Raspberry Pi setup
-└── 🔄 main.py                 # Compatibility wrapper
+src/ieee_epic/
+	core/
+		config.py     # Pydantic settings (audio, Google STT, TTS, Gemini)
+		stt.py        # Google Cloud Speech (online-only)
+		tts.py        # Edge TTS playback (en-IN/ml-IN voices)
+		ai_response.py# Gemini responses (child-friendly)
+epic_tk_ui.py     # Start/Stop loop: Listen → Gemini → Speak → repeat
 ```
 
-## 🤖 **AI Agents**
-This project features multiple intelligent agents working together:
-- **STT Agent**: Multi-backend speech recognition with auto-fallback
-- **AI Response Agent**: Context-aware bilingual conversation system
-- **Configuration Agent**: Platform-adaptive system optimization
-- **Audio Processing Agent**: Intelligent audio capture and enhancement
+## Behavior
 
-**📖 See [AGENTS.md](AGENTS.md) for complete AI agent documentation**
+- Speech-to-Text: Google Cloud Speech with automatic punctuation
+	- Primary language en-IN, alternative ml-IN/en-US for bilingual detection
+- AI: Google Gemini (gemini-2.0-flash-001) with a lower/primary-school “friendly teacher” style
+- Text-to-Speech: Edge TTS with sensible default voices
+	- English: en-IN-NeerjaNeural
+	- Malayalam: ml-IN-SobhanaNeural
+- UI: Single button Start/Stop; after speaking, it listens again automatically
 
-## 🚀 Usage
+## Notes
 
-### **Modern CLI (Recommended)**
-```bash
-# Show comprehensive system status
-ieee-epic status
+- Microphone: uses your default input (configure in `Settings().audio` if needed)
+- Dependencies: see `requirements.txt` and `pyproject.toml`
+- Logs: written to console via loguru
+- Raspberry Pi: should work if audio/credentials are set; we no longer ship offline models
 
-# Speech-to-text with options
-ieee-epic stt --lang auto --duration 5
+## Context7
 
-# Interactive STT mode  
-ieee-epic interactive
+This project uses Context7 to fetch up-to-date library usage (for example, confirming Edge TTS usage patterns). If you want runtime integration (like retrieval-augmented answers from docs), tell us what sources to connect and we’ll wire it in.
 
-# Full conversational AI
-ieee-epic conversation
+## License
 
-# AI response testing
-ieee-epic demo
-
-# System setup
-ieee-epic setup
-```
-
-### **Programmatic Usage**
-```python
-from ieee_epic import STTEngine, AIResponseSystem, Settings
-
-# Custom configuration
-settings = Settings()
-settings.audio.duration = 10.0
-
-# Use the engines
-stt_engine = STTEngine(settings)
-ai_system = AIResponseSystem(settings)
-
-results = stt_engine.recognize_speech()
-response = ai_system.generate_response(results)
-```
-
-### **Backwards Compatibility**
-```bash
-python main.py          # Shows help and status
-```
-
-## 🎤 **Features**
-- **🔤 Multilingual STT**: Malayalam and English speech recognition
-- **🤖 AI Responses**: Context-aware conversation system  
-- **🔄 Multi-Backend**: Vosk + Whisper with intelligent fallback
-- **📱 Modern CLI**: Rich terminal interface with beautiful output
-- **⚙️ Smart Config**: Pydantic-based configuration with validation
-- **🍓 Raspberry Pi**: Optimized for edge deployment
-- **🌐 Dual Mode**: Online (OpenAI) + Offline pattern-based AI
-- **🔍 Auto-Detection**: Language and platform detection
-- **🧪 Type Safe**: Full type hints and validation throughout
-
-## 📊 **Current Status**
-- ✅ **English STT Model**: Available and ready
-- ❌ **Malayalam STT Model**: Optional (auto-download available)
-- ✅ **AI Response System**: Offline mode functional
-- ✅ **Audio Processing**: Ready with device auto-detection
-- ✅ **CLI Interface**: Full feature set available
-- ✅ **Package Installation**: Professional Python package
-
-## 🔧 **Installation**
-```bash
-# Clone and install
-git clone <repository>
-cd IEEE-EPIC-project
-pip install -e .
-
-# Setup system components
-ieee-epic setup
-```
-
-## 🔄 **Next Steps**
-- 🔄 TTS (Text-to-Speech) integration
-- 🔄 Web API interface for remote access  
-- 🔄 Home Assistant integration examples
-- 🔄 Enhanced Malayalam model support
-
-## 🤝 **Contributing**
-This project is part of the IEEE EPIC initiative. Contributions welcome!
-
-**📖 For AI agent architecture details, see [AGENTS.md](AGENTS.md)**
-
-## 📄 **License**
-Educational use under IEEE EPIC project guidelines.
+MIT
