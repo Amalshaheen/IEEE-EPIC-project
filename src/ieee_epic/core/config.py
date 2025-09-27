@@ -33,44 +33,21 @@ class AudioSettings(BaseModel):
 
 
 class ModelSettings(BaseModel):
-    """STT model configuration settings."""
-    
-    models_dir: Path = Field(default=Path("models"), description="Directory for model storage")
-    english_model_path: Optional[Path] = Field(default=None, description="Path to English model")
-    malayalam_model_path: Optional[Path] = Field(default=None, description="Path to Malayalam model")
-    whisper_model_path: Optional[Path] = Field(default=None, description="Path to Whisper model")
-    
+    """Online-only STT configuration settings (Google Cloud Speech)."""
+
     # Language preferences
-    default_language: str = Field(default="en", description="Default language (en/ml/auto)")
+    default_language: str = Field(default="auto", description="Default language (en/ml/auto)")
     supported_languages: List[str] = Field(default=["en", "ml"], description="Supported languages")
-    
-    # Model URLs for automatic download
-    model_urls: Dict[str, str] = Field(default={
-        "en_small": "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip",
-        "ml_small": "https://alphacephei.com/vosk/models/vosk-model-small-ml-0.22.zip",
-    })
-    
+
     # Online STT preferences
-    use_online_stt: bool = Field(default=False, description="Enable online STT services")
-    preferred_backend: str = Field(default="vosk", description="Preferred STT backend (vosk/whisper/deepgram)")
-    
-    # Deepgram settings
-    deepgram_api_key: Optional[str] = Field(default=None, description="Deepgram API key")
-    deepgram_model: str = Field(default="nova-2", description="Deepgram model to use")
-    deepgram_language: str = Field(default="en-US", description="Deepgram language code")
-    enable_streaming: bool = Field(default=True, description="Enable real-time streaming STT")
-    
-    def __init__(self, **data):
-        super().__init__(**data)
-        self._setup_model_paths()
-    
-    def _setup_model_paths(self):
-        """Setup default model paths if not provided."""
-        if not self.english_model_path:
-            self.english_model_path = Path("vosk-en")
-        if not self.malayalam_model_path:
-            self.malayalam_model_path = Path("vosk-ml")
-    
+    use_online_stt: bool = Field(default=True, description="Enable online STT services")
+    preferred_backend: str = Field(default="google", description="Preferred STT backend (google)")
+
+    # Google Cloud Speech settings
+    google_primary_language: str = Field(default="en-IN", description="Primary language code for recognition")
+    google_alternative_languages: List[str] = Field(default_factory=lambda: ["ml-IN", "en-US"], description="Alternative language codes")
+    enable_automatic_punctuation: bool = Field(default=True, description="Enable automatic punctuation in transcripts")
+
     @validator('default_language')
     def validate_default_language(cls, v, values):
         supported = values.get('supported_languages', ['en', 'ml'])
@@ -80,17 +57,9 @@ class ModelSettings(BaseModel):
     
     @validator('preferred_backend')
     def validate_preferred_backend(cls, v):
-        valid_backends = ['vosk', 'whisper', 'deepgram']
+        valid_backends = ['google']
         if v not in valid_backends:
             raise ValueError(f"Preferred backend must be one of: {valid_backends}")
-        return v
-    
-    @validator('deepgram_model')
-    def validate_deepgram_model(cls, v):
-        valid_models = ['nova-2', 'nova', 'enhanced', 'base', 'whisper']
-        if v not in valid_models:
-            logger.warning(f"Unknown Deepgram model: {v}. Using default.")
-            return "nova-2"
         return v
 
 
@@ -150,9 +119,12 @@ class AISettings(BaseModel):
     
     # System instruction for bilingual support
     system_instruction: str = Field(
-        default="You are a helpful AI assistant for the IEEE EPIC project. "
-                "You can respond in both English and Malayalam. Keep responses concise and friendly. "
-                "If the input is in Malayalam, try to respond in Malayalam when appropriate.",
+        default=(
+            "You are a friendly teacher for lower/primary school students. "
+            "Answer in a simple, age-appropriate way with short sentences. "
+            "Use easy words and clear examples. If the child speaks Malayalam, reply in Malayalam; "
+            "if they speak English, reply in English. Be kind, encouraging, and brief."
+        ),
         description="System instruction for the AI model"
     )
     
@@ -350,21 +322,13 @@ class Settings(BaseModel):
             return False
     
     def get_model_path(self, language: str) -> Optional[Path]:
-        """Get model path for specified language."""
-        if language == "en":
-            return self.models.english_model_path
-        elif language == "ml":
-            return self.models.malayalam_model_path
-        else:
-            logger.warning(f"Unsupported language: {language}")
-            return None
+        """Deprecated: offline model paths removed in online-only mode."""
+        logger.warning("get_model_path is deprecated in online-only mode")
+        return None
     
     def is_model_available(self, language: str) -> bool:
-        """Check if model is available for specified language."""
-        model_path = self.get_model_path(language)
-        if model_path and model_path.exists():
-            return True
-        return False
+        """Always True for online STT (no local models needed)."""
+        return True
 
 
 # Default settings instance

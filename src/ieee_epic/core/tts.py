@@ -1,8 +1,7 @@
 """
 Text-to-Speech (TTS) Engine for IEEE EPIC STT system.
 
-This module provides a unified interface for different TTS backends
-including Edge TTS (multilingual), RealtimeTTS (high-quality), and System TTS (fallback),
+This module provides a simplified interface for Edge TTS (multilingual)
 with support for Malayalam and English languages.
 """
 
@@ -16,7 +15,6 @@ from pathlib import Path
 from typing import Dict, Optional, Union, List, Any
 import json
 
-import pygame
 from loguru import logger
 
 from .config import Settings
@@ -169,243 +167,7 @@ class EdgeTTSBackend(TTSBackend):
         return "online"
 
 
-class RealtimeTTSBackend(TTSBackend):
-    """RealtimeTTS backend for high-quality synthesis."""
-    
-    def __init__(self, settings: Settings):
-        self.settings = settings
-        self._stream = None
-        self._engine = None
-        self._initialize_engine()
-    
-    def _initialize_engine(self):
-        """Initialize RealtimeTTS engine."""
-        try:
-            from RealtimeTTS import TextToAudioStream, SystemEngine, CoquiEngine
-            
-            # Try different engines in order of preference
-            engines_to_try = [
-                ("System", SystemEngine),
-                ("Coqui", lambda: CoquiEngine() if self._is_coqui_available() else None),
-            ]
-            
-            for engine_name, engine_class in engines_to_try:
-                try:
-                    if engine_name == "Coqui" and not self._is_coqui_available():
-                        continue
-                        
-                    engine = engine_class()
-                    self._engine = engine
-                    self._stream = TextToAudioStream(engine)
-                    logger.success(f"✅ RealtimeTTS initialized with {engine_name} engine")
-                    return
-                except Exception as e:
-                    logger.warning(f"Failed to initialize {engine_name} engine: {e}")
-                    continue
-            
-            logger.error("Failed to initialize any RealtimeTTS engine")
-            
-        except ImportError:
-            logger.error("RealtimeTTS not available. Please install: pip install realtimetts[all]")
-        except Exception as e:
-            logger.error(f"Failed to initialize RealtimeTTS: {e}")
-    
-    def _is_coqui_available(self) -> bool:
-        """Check if Coqui TTS is available."""
-        try:
-            import torch
-            return torch.cuda.is_available() or True  # Allow CPU usage
-        except ImportError:
-            return False
-    
-    async def synthesize(self, text: str, language: str = "en", voice: Optional[str] = None) -> bytes:
-        """Synthesize speech using RealtimeTTS."""
-        if not self._stream:
-            return b""
-        
-        try:
-            # Use temporary file for synthesis
-            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
-                tmp_path = tmp_file.name
-            
-            # Perform synthesis
-            success = self.synthesize_to_file(text, tmp_path, language, voice)
-            
-            if success:
-                with open(tmp_path, 'rb') as f:
-                    audio_data = f.read()
-                
-                # Clean up
-                Path(tmp_path).unlink(missing_ok=True)
-                
-                logger.success(f"✅ RealtimeTTS synthesis completed: {len(audio_data)} bytes")
-                return audio_data
-            
-            return b""
-            
-        except Exception as e:
-            logger.error(f"RealtimeTTS synthesis failed: {e}")
-            return b""
-    
-    def synthesize_to_file(self, text: str, output_path: Union[str, Path], language: str = "en", voice: Optional[str] = None) -> bool:
-        """Synthesize speech and save to file."""
-        if not self._stream:
-            return False
-        
-        try:
-            # Configure stream for file output
-            self._stream.feed(text)
-            
-            # Save to file (this is a simplified approach)
-            # In a real implementation, you'd need to capture the audio stream
-            self._stream.play()
-            
-            logger.success(f"✅ RealtimeTTS synthesis completed")
-            return True
-            
-        except Exception as e:
-            logger.error(f"RealtimeTTS synthesis failed: {e}")
-            return False
-    
-    def is_available(self) -> bool:
-        """Check if RealtimeTTS is available."""
-        return self._stream is not None
-    
-    def get_available_voices(self, language: str = "en") -> List[str]:
-        """Get available voices (limited for RealtimeTTS)."""
-        return ["default"]  # RealtimeTTS may have limited voice options
-    
-    def get_backend_type(self) -> str:
-        """Return backend type."""
-        return "offline"
-
-
-class SystemTTSBackend(TTSBackend):
-    """System TTS backend as fallback."""
-    
-    def __init__(self, settings: Settings):
-        self.settings = settings
-        self._available = self._check_availability()
-    
-    def _check_availability(self) -> bool:
-        """Check if system TTS is available."""
-        try:
-            import subprocess
-            import platform
-            
-            system = platform.system().lower()
-            
-            if system == "windows":
-                # Check for Windows SAPI
-                try:
-                    subprocess.run(["powershell", "Add-Type -AssemblyName System.Speech"], 
-                                   check=True, capture_output=True)
-                    return True
-                except subprocess.CalledProcessError:
-                    return False
-            elif system == "darwin":
-                # Check for macOS say command
-                try:
-                    subprocess.run(["which", "say"], check=True, capture_output=True)
-                    return True
-                except subprocess.CalledProcessError:
-                    return False
-            else:
-                # Check for Linux espeak or festival
-                for cmd in ["espeak", "festival"]:
-                    try:
-                        subprocess.run(["which", cmd], check=True, capture_output=True)
-                        return True
-                    except subprocess.CalledProcessError:
-                        continue
-                return False
-                
-        except Exception:
-            return False
-    
-    async def synthesize(self, text: str, language: str = "en", voice: Optional[str] = None) -> bytes:
-        """Synthesize speech using system TTS."""
-        # Use temporary file approach
-        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
-            tmp_path = tmp_file.name
-        
-        success = self.synthesize_to_file(text, tmp_path, language, voice)
-        
-        if success:
-            with open(tmp_path, 'rb') as f:
-                audio_data = f.read()
-            
-            # Clean up
-            Path(tmp_path).unlink(missing_ok=True)
-            return audio_data
-        
-        return b""
-    
-    def synthesize_to_file(self, text: str, output_path: Union[str, Path], language: str = "en", voice: Optional[str] = None) -> bool:
-        """Synthesize speech using system commands."""
-        if not self._available:
-            return False
-        
-        try:
-            import subprocess
-            import platform
-            
-            system = platform.system().lower()
-            output_path = Path(output_path)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            if system == "windows":
-                # Use Windows SAPI
-                ps_script = f'''
-                Add-Type -AssemblyName System.Speech
-                $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
-                $synth.SetOutputToWaveFile("{output_path}")
-                $synth.Speak("{text}")
-                $synth.Dispose()
-                '''
-                subprocess.run(["powershell", "-Command", ps_script], check=True)
-                
-            elif system == "darwin":
-                # Use macOS say command with audio output
-                subprocess.run([
-                    "say", text, "-o", str(output_path.with_suffix('.aiff'))
-                ], check=True)
-                
-                # Convert AIFF to WAV if needed
-                if output_path.suffix.lower() == '.wav':
-                    subprocess.run([
-                        "ffmpeg", "-i", str(output_path.with_suffix('.aiff')),
-                        str(output_path), "-y"
-                    ], check=True, capture_output=True)
-                    output_path.with_suffix('.aiff').unlink(missing_ok=True)
-                    
-            else:
-                # Use Linux espeak
-                subprocess.run([
-                    "espeak", text, "-w", str(output_path)
-                ], check=True)
-            
-            logger.success(f"✅ System TTS synthesis completed: {output_path}")
-            return True
-            
-        except subprocess.CalledProcessError as e:
-            logger.error(f"System TTS command failed: {e}")
-            return False
-        except Exception as e:
-            logger.error(f"System TTS synthesis failed: {e}")
-            return False
-    
-    def is_available(self) -> bool:
-        """Check if system TTS is available."""
-        return self._available
-    
-    def get_available_voices(self, language: str = "en") -> List[str]:
-        """Get available system voices (limited)."""
-        return ["default"]
-    
-    def get_backend_type(self) -> str:
-        """Return backend type."""
-        return "offline"
+## System/Realtime backends removed for simplicity (Edge-only)
 
 
 class TTSEngine:
@@ -425,6 +187,8 @@ class TTSEngine:
     def _initialize_player(self):
         """Initialize pygame for audio playback."""
         try:
+            # Import pygame lazily to avoid import-time errors if not installed
+            import pygame
             pygame.mixer.init(
                 frequency=self.settings.tts.sample_rate,
                 size=-16,
@@ -444,23 +208,8 @@ class TTSEngine:
         if edge_backend.is_available():
             self.backends['edge'] = edge_backend
             logger.info("✅ Edge TTS backend initialized")
-        
-        # RealtimeTTS backend (offline, high quality)
-        realtime_backend = RealtimeTTSBackend(self.settings)
-        if realtime_backend.is_available():
-            self.backends['realtime'] = realtime_backend
-            logger.info("✅ RealtimeTTS backend initialized")
-        
-        # System TTS backend (offline, fallback)
-        system_backend = SystemTTSBackend(self.settings)
-        if system_backend.is_available():
-            self.backends['system'] = system_backend
-            logger.info("✅ System TTS backend initialized")
-        
         if not self.backends:
             logger.error("❌ No TTS backends available!")
-        else:
-            logger.info(f"Available TTS backends: {list(self.backends.keys())}")
     
     def get_preferred_backend(self) -> Optional[TTSBackend]:
         """Get the preferred backend based on configuration."""
@@ -469,8 +218,8 @@ class TTSEngine:
         if preferred in self.backends:
             return self.backends[preferred]
         
-        # Fallback priority: edge -> realtime -> system
-        for backend_name in ['edge', 'realtime', 'system']:
+        # Fallback priority: edge only
+        for backend_name in ['edge']:
             if backend_name in self.backends:
                 logger.warning(f"Preferred backend '{preferred}' not available, using '{backend_name}'")
                 return self.backends[backend_name]
@@ -543,17 +292,18 @@ class TTSEngine:
         
         if audio_data and self.player:
             try:
-                # Save to temporary file and play
-                with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
+                # Save to temporary MP3 file and play (edge-tts outputs MP3)
+                with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as tmp_file:
                     tmp_file.write(audio_data)
                     tmp_path = tmp_file.name
                 
-                # Play audio
-                sound = self.player.Sound(tmp_path)
-                sound.play()
+                # Play audio using music module for MP3
+                import pygame
+                pygame.mixer.music.load(tmp_path)
+                pygame.mixer.music.play()
                 
                 # Wait for playback to finish
-                while self.player.get_busy():
+                while pygame.mixer.music.get_busy():
                     time.sleep(0.1)
                 
                 # Clean up
