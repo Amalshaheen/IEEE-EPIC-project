@@ -8,5 +8,8 @@ pydantic>=2.0.0
 loguru>=0.7.0
 tomli>=2.0.0
 tomli-w>=1.0.0
+pyttsx3>=2.90
+gTTS>=2.5.1
+# Optional richer TTS backends
 edge-tts>=6.1.0
 pygame>=2.5.0

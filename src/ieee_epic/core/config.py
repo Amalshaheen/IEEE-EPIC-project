@@ -67,7 +67,7 @@ class TTSSettings(BaseModel):
     """Text-to-Speech configuration settings."""
     
     enabled: bool = Field(default=True, description="Enable TTS functionality")
-    preferred_engine: str = Field(default="edge", description="Preferred TTS engine (edge/system/realtime)")
+    preferred_engine: str = Field(default="pyttsx3", description="Preferred TTS engine (pyttsx3/gtts/edge)")
     
     # Voice settings
     voice_en: str = Field(default="en-IN-NeerjaNeural", description="English voice (Indian accent)")
@@ -102,7 +102,7 @@ class TTSSettings(BaseModel):
     
     @validator('preferred_engine')
     def validate_preferred_engine(cls, v):
-        valid_engines = ['edge', 'system', 'realtime', 'coqui']
+        valid_engines = ['pyttsx3', 'gtts', 'edge']
         if v not in valid_engines:
             raise ValueError(f"Preferred engine must be one of: {valid_engines}")
         return v

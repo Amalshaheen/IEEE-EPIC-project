@@ -1,8 +1,10 @@
 """
 Text-to-Speech (TTS) Engine for IEEE EPIC STT system.
 
-This module provides a simplified interface for Edge TTS (multilingual)
-with support for Malayalam and English languages.
+This module provides TTS backends with minimal setup options:
+- pyttsx3 (offline, no keys)
+- gTTS (simple online, MP3)
+- Edge TTS (optional online, MP3)
 """
 
 import asyncio
@@ -47,6 +49,139 @@ class TTSBackend(ABC):
     def get_backend_type(self) -> str:
         """Return backend type (online/offline)."""
         pass
+
+
+class Pyttsx3Backend(TTSBackend):
+    """Offline TTS using pyttsx3 (no internet, no API keys)."""
+
+    def __init__(self, settings: Settings):
+        self.settings = settings
+        self._engine = None
+        self._initialize()
+
+    def _initialize(self):
+        try:
+            import pyttsx3
+            self._engine = pyttsx3.init()
+            # Adjust rate/volume
+            rate = self._engine.getProperty('rate')
+            self._engine.setProperty('rate', int(rate * self.settings.tts.voice_speed))
+            self._engine.setProperty('volume', float(self.settings.tts.voice_volume))
+            logger.success("✅ pyttsx3 backend initialized")
+        except Exception as e:
+            logger.error(f"pyttsx3 init failed: {e}")
+            self._engine = None
+
+    async def synthesize(self, text: str, language: str = "en", voice: Optional[str] = None) -> bytes:
+        if not self._engine:
+            return b""
+        try:
+            # pyttsx3 outputs directly to speakers; for bytes, save to a WAV file via driver
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+                tmp_path = tmp.name
+            self._engine.save_to_file(text, tmp_path)
+            self._engine.runAndWait()
+            with open(tmp_path, 'rb') as f:
+                data = f.read()
+            Path(tmp_path).unlink(missing_ok=True)
+            return data
+        except Exception as e:
+            logger.error(f"pyttsx3 synth failed: {e}")
+            return b""
+
+    def synthesize_to_file(self, text: str, output_path: Union[str, Path], language: str = "en", voice: Optional[str] = None) -> bool:
+        if not self._engine:
+            return False
+        try:
+            output_path = Path(output_path)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            self._engine.save_to_file(text, str(output_path))
+            self._engine.runAndWait()
+            return output_path.exists() and output_path.stat().st_size > 0
+        except Exception as e:
+            logger.error(f"pyttsx3 save failed: {e}")
+            return False
+
+    def is_available(self) -> bool:
+        return self._engine is not None
+
+    def get_available_voices(self, language: str = "en") -> List[str]:
+        try:
+            voices = []
+            for v in self._engine.getProperty('voices'):
+                voices.append(v.id)
+            return voices
+        except Exception:
+            return []
+
+    def get_backend_type(self) -> str:
+        return "offline"
+
+    def speak(self, text: str, language: str = "en", voice: Optional[str] = None) -> bool:
+        """Speak directly using pyttsx3 without generating bytes/files."""
+        if not self._engine:
+            return False
+        try:
+            self._engine.say(text)
+            self._engine.runAndWait()
+            return True
+        except Exception as e:
+            logger.error(f"pyttsx3 speak failed: {e}")
+            return False
+
+
+class GTTSBackend(TTSBackend):
+    """Simple online TTS using gTTS, returns MP3 bytes."""
+
+    def __init__(self, settings: Settings):
+        self.settings = settings
+        try:
+            from gtts import gTTS  # noqa: F401
+            self._ok = True
+            logger.success("✅ gTTS backend ready")
+        except Exception as e:
+            logger.error(f"gTTS import failed: {e}")
+            self._ok = False
+
+    async def synthesize(self, text: str, language: str = "en", voice: Optional[str] = None) -> bytes:
+        if not self._ok:
+            return b""
+        try:
+            from gtts import gTTS
+            tts = gTTS(text=text, lang='ml' if language == 'ml' else 'en')
+            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as tmp:
+                tmp_path = tmp.name
+            tts.save(tmp_path)
+            with open(tmp_path, 'rb') as f:
+                data = f.read()
+            Path(tmp_path).unlink(missing_ok=True)
+            return data
+        except Exception as e:
+            logger.error(f"gTTS synth failed: {e}")
+            return b""
+
+    def synthesize_to_file(self, text: str, output_path: Union[str, Path], language: str = "en", voice: Optional[str] = None) -> bool:
+        if not self._ok:
+            return False
+        try:
+            from gtts import gTTS
+            output_path = Path(output_path)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            tts = gTTS(text=text, lang='ml' if language == 'ml' else 'en')
+            tts.save(str(output_path))
+            return output_path.exists() and output_path.stat().st_size > 0
+        except Exception as e:
+            logger.error(f"gTTS save failed: {e}")
+            return False
+
+    def is_available(self) -> bool:
+        return self._ok
+
+    def get_available_voices(self, language: str = "en") -> List[str]:
+        return []
+
+    def get_backend_type(self) -> str:
+        return "online"
 
 
 class EdgeTTSBackend(TTSBackend):
@@ -188,7 +323,7 @@ class TTSEngine:
         """Initialize pygame for audio playback."""
         try:
             # Import pygame lazily to avoid import-time errors if not installed
-            import pygame
+            import pygame  # type: ignore
             pygame.mixer.init(
                 frequency=self.settings.tts.sample_rate,
                 size=-16,
@@ -198,12 +333,24 @@ class TTSEngine:
             self.player = pygame.mixer
             logger.success("✅ Audio player initialized")
         except Exception as e:
-            logger.error(f"Failed to initialize audio player: {e}")
+            logger.warning(f"Pygame mixer not available, will use backend direct playback when possible: {e}")
             self.player = None
     
     def _initialize_backends(self):
         """Initialize all available TTS backends."""
-        # Edge TTS backend (online, multilingual)
+        # pyttsx3 (offline, default)
+        pyttsx3_backend = Pyttsx3Backend(self.settings)
+        if pyttsx3_backend.is_available():
+            self.backends['pyttsx3'] = pyttsx3_backend
+            logger.info("✅ pyttsx3 backend initialized")
+
+        # gTTS (simple online)
+        gtts_backend = GTTSBackend(self.settings)
+        if gtts_backend.is_available():
+            self.backends['gtts'] = gtts_backend
+            logger.info("✅ gTTS backend initialized")
+
+        # Edge TTS backend (online, multilingual, optional)
         edge_backend = EdgeTTSBackend(self.settings)
         if edge_backend.is_available():
             self.backends['edge'] = edge_backend
@@ -214,12 +361,10 @@ class TTSEngine:
     def get_preferred_backend(self) -> Optional[TTSBackend]:
         """Get the preferred backend based on configuration."""
         preferred = self.settings.tts.preferred_engine
-        
         if preferred in self.backends:
             return self.backends[preferred]
-        
-        # Fallback priority: edge only
-        for backend_name in ['edge']:
+        # Fallback priority
+        for backend_name in ['pyttsx3', 'gtts', 'edge']:
             if backend_name in self.backends:
                 logger.warning(f"Preferred backend '{preferred}' not available, using '{backend_name}'")
                 return self.backends[backend_name]
@@ -288,23 +433,45 @@ class TTSEngine:
     
     async def speak(self, text: str, language: str = "auto") -> bool:
         """Synthesize and immediately play speech."""
+        backend = self.get_preferred_backend()
+        # If backend can handle playback natively (pyttsx3), use it
+        if backend and hasattr(backend, 'speak'):
+            try:
+                # type: ignore[attr-defined]
+                return bool(backend.speak(text, language))
+            except Exception as e:
+                logger.error(f"Backend direct speak failed: {e}")
+                # fall through to generic path
+
         audio_data = await self.synthesize_speech(text, language)
         
         if audio_data and self.player:
             try:
-                # Save to temporary MP3 file and play (edge-tts outputs MP3)
-                with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as tmp_file:
+                # Save to temporary file based on content heuristics
+                # Prefer MP3 for gTTS/Edge, WAV for pyttsx3
+                is_mp3 = audio_data[:3] == b"ID3" or audio_data[:2] == b"\xff\xfb"
+                suffix = '.mp3' if is_mp3 else '.wav'
+                with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp_file:
                     tmp_file.write(audio_data)
                     tmp_path = tmp_file.name
                 
-                # Play audio using music module for MP3
-                import pygame
-                pygame.mixer.music.load(tmp_path)
-                pygame.mixer.music.play()
-                
-                # Wait for playback to finish
-                while pygame.mixer.music.get_busy():
-                    time.sleep(0.1)
+                # Play audio using music module for MP3, Sound for WAV
+                try:
+                    import pygame  # type: ignore
+                except Exception as e:
+                    logger.warning(f"Pygame not available for playback: {e}")
+                    Path(tmp_path).unlink(missing_ok=True)
+                    return True
+                if suffix == '.mp3':
+                    pygame.mixer.music.load(tmp_path)
+                    pygame.mixer.music.play()
+                    while pygame.mixer.music.get_busy():
+                        time.sleep(0.1)
+                else:
+                    sound = self.player.Sound(tmp_path)
+                    sound.play()
+                    while self.player.get_busy():
+                        time.sleep(0.1)
                 
                 # Clean up
                 Path(tmp_path).unlink(missing_ok=True)
