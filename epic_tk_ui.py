@@ -2,11 +2,19 @@ import tkinter as tk
 from tkinter import scrolledtext
 import asyncio
 import threading
+import os
+import sys
 
-from src.ieee_epic.core.stt import STTEngine
-from src.ieee_epic.core.tts import TTSEngine
-from src.ieee_epic.core.ai_response import AIResponseSystem
-from src.ieee_epic.core.config import Settings
+# Ensure the local 'src' directory is importable when running this script directly
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+SRC_DIR = os.path.join(ROOT_DIR, 'src')
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
+
+from ieee_epic.core.stt import STTEngine
+from ieee_epic.core.tts import TTSEngine
+from ieee_epic.core.ai_response import AIResponseSystem
+from ieee_epic.core.config import Settings
 from loguru import logger
 
 

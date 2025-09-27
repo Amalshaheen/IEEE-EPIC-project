@@ -16,9 +16,9 @@ __version__ = "0.2.0"
 __author__ = "IEEE EPIC Team"
 __email__ = "epic@ieee.org"
 
-from ieee_epic.core.stt import STTEngine
-from ieee_epic.core.ai_response import AIResponseSystem
-from ieee_epic.core.config import Settings
+from .core.stt import STTEngine
+from .core.ai_response import AIResponseSystem
+from .core.config import Settings
 
 __all__ = [
     "STTEngine",
