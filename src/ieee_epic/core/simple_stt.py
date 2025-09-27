@@ -20,19 +20,83 @@ class SimpleSpeechRecognizer:
     def _initialize_microphone(self):
         """Initialize and calibrate the microphone"""
         try:
-            self.microphone = sr.Microphone()
+            # First, list available microphones to help debug
+            self.get_available_microphones()
             
-            # Calibrate for ambient noise
+            # Try to find the best microphone (prefer USB mics on RPi)
+            mic_list = sr.Microphone.list_microphone_names()
+            best_mic_index = None
+            
+            # Look for USB or external microphones first (better for RPi)
+            for i, name in enumerate(mic_list):
+                if any(keyword in name.lower() for keyword in ['usb', 'webcam', 'logitech', 'blue', 'audio-technica', 'plantronics', 'hyperx']):
+                    best_mic_index = i
+                    logger.info(f"Found preferred USB microphone: {name} (index {i})")
+                    break
+            
+            # If no USB device found, try to find any working device
+            if best_mic_index is None:
+                logger.warning("No USB microphone found, trying to find best available device...")
+                # Try each device to find one that works
+                for i, name in enumerate(mic_list):
+                    try:
+                        test_mic = sr.Microphone(device_index=i)
+                        with test_mic as source:
+                            # Quick test - just try to access the device
+                            logger.info(f"Testing device {i}: {name}")
+                            time.sleep(0.1)  # Short test
+                            best_mic_index = i
+                            logger.info(f"Device {i} accessible: {name}")
+                            break
+                    except Exception as e:
+                        logger.warning(f"Device {i} not accessible: {e}")
+                        continue
+            
+            # Initialize microphone with specific device if found
+            if best_mic_index is not None:
+                self.microphone = sr.Microphone(device_index=best_mic_index)
+                logger.info(f"Using microphone index {best_mic_index}: {mic_list[best_mic_index]}")
+            else:
+                self.microphone = sr.Microphone()
+                logger.warning("Using default microphone - USB microphone detection failed")
+            
+            # Raspberry Pi + USB microphone specific settings
+            self.recognizer.energy_threshold = 200  # Lower threshold for USB mics
+            self.recognizer.dynamic_energy_threshold = True
+            self.recognizer.pause_threshold = 0.6  # Shorter pause detection
+            self.recognizer.operation_timeout = None  # Disable operation timeout
+            
+            # Calibrate for ambient noise with longer duration for RPi + USB mic
             with self.microphone as source:
-                logger.info("Calibrating microphone for ambient noise...")
-                self.recognizer.adjust_for_ambient_noise(source, duration=1)
-                logger.success("Microphone calibrated successfully")
+                logger.info("Calibrating USB microphone for ambient noise (Raspberry Pi optimized)...")
+                # Longer calibration for USB mics
+                self.recognizer.adjust_for_ambient_noise(source, duration=3)
+                
+                # Check if energy threshold is reasonable
+                threshold = self.recognizer.energy_threshold
+                logger.info(f"Energy threshold set to: {threshold}")
+                
+                # USB mics often need different thresholds
+                if threshold < 100:
+                    logger.warning("Energy threshold very low - forcing minimum for USB mic")
+                    self.recognizer.energy_threshold = 250
+                elif threshold > 4000:
+                    logger.warning("Energy threshold very high - capping for USB mic")
+                    self.recognizer.energy_threshold = 1000
+                
+                logger.info(f"Final energy threshold: {self.recognizer.energy_threshold}")
+                logger.success("USB microphone calibrated successfully")
                 
         except Exception as e:
             logger.error(f"Failed to initialize microphone: {e}")
+            logger.error("💡 USB Microphone troubleshooting:")
+            logger.error("  1. Run: python usb_mic_fix.py")
+            logger.error("  2. Check: arecord -l")
+            logger.error("  3. Test: arecord -d 3 test.wav && aplay test.wav")
+            logger.error("  4. Volume: alsamixer -> F6 -> select USB device -> F4 -> increase volume")
             self.microphone = None
     
-    def listen_for_speech(self, timeout: int = 5, phrase_time_limit: int = 10) -> Optional[sr.AudioData]:
+    def listen_for_speech(self, timeout: int = 10, phrase_time_limit: int = 15) -> Optional[sr.AudioData]:
         """Listen for speech input"""
         if not self.microphone:
             logger.error("Microphone not available")
@@ -41,16 +105,21 @@ class SimpleSpeechRecognizer:
         try:
             with self.microphone as source:
                 logger.info("🎤 Listening for speech...")
+                
+                # Raspberry Pi optimization: adjust for ambient noise briefly before each listen
+                self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                
                 audio = self.recognizer.listen(
                     source, 
-                    timeout=timeout, 
-                    phrase_time_limit=phrase_time_limit
+                    timeout=timeout,  # Increased timeout for RPi
+                    phrase_time_limit=phrase_time_limit  # Increased phrase time limit
                 )
                 logger.info("✅ Audio captured")
                 return audio
                 
         except sr.WaitTimeoutError:
             logger.warning("⏰ Listening timeout - no speech detected")
+            logger.info("💡 Try speaking louder or closer to the microphone")
             return None
         except Exception as e:
             logger.error(f"❌ Error while listening: {e}")
@@ -114,7 +183,7 @@ class SimpleSpeechRecognizer:
             logger.error(f"❌ Unexpected error in {lang_code} recognition: {e}")
             return None, None
     
-    def listen_and_recognize(self, language: str = "auto", timeout: int = 5) -> Tuple[Optional[str], Optional[str]]:
+    def listen_and_recognize(self, language: str = "auto", timeout: int = 10) -> Tuple[Optional[str], Optional[str]]:
         """
         Listen for speech and recognize it
         
