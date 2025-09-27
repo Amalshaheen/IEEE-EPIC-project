@@ -2,6 +2,15 @@
 
 Minimal, online-only voice assistant: click Start, speak in English or Malayalam, it listens, asks Gemini, speaks a short child-friendly reply, and keeps listening.
 
+## 🎤 Voice Recognition Features
+
+This project includes multiple voice recognition implementations:
+- **Simple Voice Recognition**: Standalone GUI with basic Malayalam & English support
+- **Enhanced Voice Recognition**: Advanced GUI with improved error handling
+- **Modular Components**: Reusable STT/TTS modules for integration
+
+See [VOICE_RECOGNITION.md](./VOICE_RECOGNITION.md) for detailed documentation.
+
 ## Quick start
 
 ```bash
