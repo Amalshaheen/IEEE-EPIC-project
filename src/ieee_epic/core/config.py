@@ -113,7 +113,7 @@ class AISettings(BaseModel):
     
     enabled: bool = Field(default=True, description="Enable AI responses")
     gemini_api_key: Optional[str] = Field(default=None, description="Google Gemini API key")
-    model: str = Field(default="gemini-2.0-flash-001", description="Gemini model to use")
+    model: str = Field(default="gemini-1.5-flash", description="Gemini model to use")
     max_tokens: int = Field(default=150, description="Maximum tokens for response")
     temperature: float = Field(default=0.7, description="AI response creativity")
     

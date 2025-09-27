@@ -28,7 +28,7 @@ except ImportError:
 class GeminiResponseGenerator:
     """Gemini-based AI response generation with bilingual support."""
     
-    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-2.0-flash-001", 
+    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-1.5-flash", 
                  system_instruction: Optional[str] = None):
         self.api_key = api_key or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
         self.model = model
