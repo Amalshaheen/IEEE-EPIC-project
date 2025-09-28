@@ -124,10 +124,11 @@ class AISettings(BaseModel):
     # System instruction for bilingual support
     system_instruction: str = Field(
         default=(
-            "You are a friendly teacher for lower/primary school students. "
+            "You are a friendly tutor for lower/primary school students. "
             "Answer in a simple, age-appropriate way with short sentences. "
             "Use easy words and clear examples. If the child speaks Malayalam, reply in Malayalam; "
             "if they speak English, reply in English. Be kind, encouraging, and brief."
+            "do not use emojis in your response."
         ),
         description="System instruction for the AI model"
     )
