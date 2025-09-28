@@ -58,8 +58,9 @@ class ProximitySensor:
         self.pin = pin
         self.is_active = False
         self.detection_callback = None
+        self.gpio_available = GPIO_AVAILABLE
         
-        if GPIO_AVAILABLE:
+        if self.gpio_available:
             try:
                 # Set GPIO mode to BCM
                 GPIO.setmode(GPIO.BCM)
@@ -71,7 +72,7 @@ class ProximitySensor:
                 logger.info(f"✅ Proximity sensor initialized on GPIO pin {self.pin}")
             except Exception as e:
                 logger.error(f"Failed to initialize GPIO: {e}")
-                GPIO_AVAILABLE = False
+                self.gpio_available = False
         else:
             logger.warning("GPIO not available - proximity sensor disabled")
     
@@ -81,7 +82,7 @@ class ProximitySensor:
     
     def start_monitoring(self):
         """Start monitoring proximity sensor in a separate thread"""
-        if not GPIO_AVAILABLE:
+        if not self.gpio_available:
             logger.warning("Cannot start proximity monitoring - GPIO not available")
             return
         
@@ -133,7 +134,7 @@ class ProximitySensor:
     def cleanup(self):
         """Cleanup GPIO resources"""
         self.stop_monitoring()
-        if GPIO_AVAILABLE:
+        if self.gpio_available:
             try:
                 GPIO.cleanup()
                 logger.info("🧹 GPIO cleanup completed")
@@ -456,7 +457,7 @@ class HandshakeVoiceAI:
         self.add_system_message("• Use 'Manual Chat' button for direct voice interaction")
         self.add_system_message("• Supports both Malayalam and English")
         
-        if not GPIO_AVAILABLE:
+        if not self.proximity_sensor.gpio_available:
             self.add_system_message("⚠️ Running in development mode - GPIO not available")
             self.add_system_message("Use 'Manual Chat' button to test voice functionality")
         
@@ -473,7 +474,7 @@ class HandshakeVoiceAI:
     
     def update_sensor_status(self):
         """Update sensor status label"""
-        if GPIO_AVAILABLE:
+        if self.proximity_sensor.gpio_available:
             if hasattr(self, 'proximity_sensor') and self.proximity_sensor.is_active:
                 self.sensor_status_label.config(
                     text="🔍 Sensor: Active - Ready for handshake",
@@ -694,7 +695,7 @@ class HandshakeVoiceAI:
     
     def toggle_sensor(self):
         """Toggle proximity sensor monitoring"""
-        if not GPIO_AVAILABLE:
+        if not self.proximity_sensor.gpio_available:
             messagebox.showwarning("Sensor Not Available", 
                                  "GPIO not available. Running in development mode.\n"
                                  "Use 'Manual Chat' for voice interaction.")
@@ -811,7 +812,7 @@ class HandshakeVoiceAI:
             self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
             
             # Auto-start sensor if available
-            if GPIO_AVAILABLE:
+            if self.proximity_sensor.gpio_available:
                 self.proximity_sensor.start_monitoring()
                 self.sensor_button.config(
                     text="⏹️ Stop Sensor",
