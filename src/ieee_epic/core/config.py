@@ -5,6 +5,7 @@ This module uses Pydantic for type validation and settings management,
 following modern Python configuration best practices.
 """
 
+import os
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 from pydantic import BaseModel, Field, validator
@@ -112,8 +113,11 @@ class AISettings(BaseModel):
     """AI response system configuration."""
     
     enabled: bool = Field(default=True, description="Enable AI responses")
-    gemini_api_key: Optional[str] = Field(default=None, description="Google Gemini API key")
-    model: str = Field(default="gemini-1.5-flash", description="Gemini model to use")
+    gemini_api_key: Optional[str] = Field(
+        default_factory=lambda: os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"),
+        description="Google Gemini API key"
+    )
+    model: str = Field(default="gemini-2.0-flash-001", description="Gemini model to use")
     max_tokens: int = Field(default=150, description="Maximum tokens for response")
     temperature: float = Field(default=0.7, description="AI response creativity")
     

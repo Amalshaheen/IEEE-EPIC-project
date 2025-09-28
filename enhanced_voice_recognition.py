@@ -25,7 +25,6 @@ try:
     from ieee_epic.core.simple_tts import SimpleTextToSpeech
     from ieee_epic.core.ai_response import AIResponseSystem
     from ieee_epic.core.config import Settings
-    from context7_enhanced_ai import Context7EnhancedAI
     SIMPLE_MODULES_AVAILABLE = True
 except ImportError:
     logger.warning("Simple modules not available, using fallback")
@@ -142,10 +141,10 @@ class EnhancedVoiceRecognitionGUI:
                 self.stt = SimpleSpeechRecognizer()
                 self.tts = SimpleTextToSpeech()
                 
-                # Initialize Context7 enhanced AI response system
-                self.ai_system = Context7EnhancedAI(self.settings)
+                # Initialize AI response system
+                self.ai_system = AIResponseSystem(self.settings)
                 
-                logger.info("Using simple modules with Context7 Enhanced AI system")
+                logger.info("Using simple modules with AI response system")
             elif FALLBACK_AVAILABLE:
                 self.stt = FallbackSpeechRecognizer()
                 self.tts = FallbackTextToSpeech()
@@ -361,11 +360,11 @@ class EnhancedVoiceRecognitionGUI:
         elif self.ai_system is None:
             self.add_system_message("⚠️ AI system not available. Set GOOGLE_API_KEY environment variable for AI responses.")
         else:
-            if self.ai_system.is_available():
-                self.add_system_message("✅ Context7 Enhanced AI system ready")
-                cache_info = self.ai_system.get_cache_info()
-                if cache_info['context7_available']:
-                    self.add_system_message("✅ Context7 documentation access enabled")
+            status = self.ai_system.get_status()
+            if status['gemini_available']:
+                self.add_system_message("✅ AI system ready")
+                if status['api_key_configured']:
+                    self.add_system_message("✅ Gemini API access enabled")
             else:
                 self.add_system_message("⚠️ AI system available but API not configured")
         
@@ -494,19 +493,11 @@ class EnhancedVoiceRecognitionGUI:
     
     def generate_response(self, text: str, language: str) -> str:
         """Generate an AI response to the input"""
-        if self.ai_system and self.ai_system.is_available():
+        if self.ai_system and self.ai_system.get_status()['gemini_available']:
             try:
                 # Use AI system to generate intelligent response
-                # This is the synchronous fallback
-                if hasattr(self.ai_system.ai_system, 'generate_response'):
-                    response = self.ai_system.ai_system.generate_response(text, use_context=True)
-                    return response
-                else:
-                    # Fall back to simple echo
-                    if language == "ml":
-                        return f"AI ലഭ്യമല്ല. നിങ്ങൾ പറഞ്ഞത്: {text}"
-                    else:
-                        return f"AI unavailable. You said: {text}"
+                response = self.ai_system.generate_response(text)
+                return response
             except Exception as e:
                 logger.error(f"AI response generation failed: {e}")
                 # Fall back to simple echo
@@ -522,14 +513,14 @@ class EnhancedVoiceRecognitionGUI:
                 return f"You said: {text}"
     
     async def generate_ai_response(self, text: str, language: str) -> str:
-        """Generate an enhanced AI response using Context7"""
-        if self.ai_system and self.ai_system.is_available():
+        """Generate an enhanced AI response using AI system"""
+        if self.ai_system and self.ai_system.get_status()['gemini_available']:
             try:
-                # Use Context7 enhanced AI system
-                response = await self.ai_system.generate_enhanced_response(text, language)
+                # Use AI system for response generation
+                response = self.ai_system.generate_response(text)
                 return response
             except Exception as e:
-                logger.error(f"Enhanced AI response generation failed: {e}")
+                logger.error(f"AI response generation failed: {e}")
                 # Fall back to regular response
                 return self.generate_response(text, language)
         else:
@@ -604,25 +595,16 @@ Enhanced Voice Recognition with Context7 AI Help
         if self.ai_system:
             try:
                 status_info = []
+                status = self.ai_system.get_status()
                 
                 # Check if AI is available
-                if self.ai_system.is_available():
-                    status_info.append("✅ Context7 Enhanced AI: Available")
-                    
-                    # Get cache info
-                    cache_info = self.ai_system.get_cache_info()
-                    status_info.append(f"📚 Context7 Available: {'Yes' if cache_info['context7_available'] else 'No'}")
-                    status_info.append(f"💾 Cached Libraries: {cache_info['cache_size']}")
-                    
-                    if cache_info['cached_libraries']:
-                        status_info.append(f"📖 Libraries: {', '.join(cache_info['cached_libraries'])}")
-                    
-                    # Check underlying AI system
-                    if hasattr(self.ai_system, 'ai_system') and self.ai_system.ai_system:
-                        ai_status = self.ai_system.ai_system.get_status()
-                        status_info.append(f"🧠 Gemini API: {'✅ Connected' if ai_status.get('gemini_available') else '❌ Not Available'}")
-                        status_info.append(f"🗣️ TTS Available: {'Yes' if ai_status.get('tts_available') else 'No'}")
-                        status_info.append(f"🎯 Model: {ai_status.get('model', 'Unknown')}")
+                if status['gemini_available']:
+                    status_info.append("✅ AI System: Available")
+                    status_info.append(f"🤖 Model: {status['model']}")
+                    status_info.append(f"🔑 API Key: {'Configured' if status['api_key_configured'] else 'Missing'}")
+                    status_info.append(f"� Conversation: {status['conversation_length']} messages")
+                    status_info.append(f"�️ TTS Available: {'Yes' if status.get('tts_available') else 'No'}")
+
                     
                 else:
                     status_info.append("❌ AI System: Not Available")

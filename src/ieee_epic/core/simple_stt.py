@@ -41,24 +41,41 @@ class SimpleSpeechRecognizer:
                 for i, name in enumerate(mic_list):
                     try:
                         test_mic = sr.Microphone(device_index=i)
-                        with test_mic as source:
-                            # Quick test - just try to access the device
-                            logger.info(f"Testing device {i}: {name}")
-                            time.sleep(0.1)  # Short test
-                            best_mic_index = i
-                            logger.info(f"Device {i} accessible: {name}")
-                            break
+                        if test_mic is not None:
+                            with test_mic as source:
+                                # Quick test - just try to access the device
+                                logger.info(f"Testing device {i}: {name}")
+                                time.sleep(0.1)  # Short test
+                                best_mic_index = i
+                                logger.info(f"Device {i} accessible: {name}")
+                                break
+                        else:
+                            logger.warning(f"Device {i} returned None: {name}")
                     except Exception as e:
                         logger.warning(f"Device {i} not accessible: {e}")
                         continue
             
             # Initialize microphone with specific device if found
             if best_mic_index is not None:
-                self.microphone = sr.Microphone(device_index=best_mic_index)
-                logger.info(f"Using microphone index {best_mic_index}: {mic_list[best_mic_index]}")
+                try:
+                    self.microphone = sr.Microphone(device_index=best_mic_index)
+                    logger.info(f"Using microphone index {best_mic_index}: {mic_list[best_mic_index]}")
+                except Exception as mic_e:
+                    logger.error(f"Failed to initialize microphone {best_mic_index}: {mic_e}")
+                    # Try default microphone as fallback
+                    try:
+                        self.microphone = sr.Microphone()
+                        logger.warning("Fallback to default microphone due to device-specific error")
+                    except Exception as default_e:
+                        logger.error(f"Failed to initialize default microphone: {default_e}")
+                        self.microphone = None
             else:
-                self.microphone = sr.Microphone()
-                logger.warning("Using default microphone - USB microphone detection failed")
+                try:
+                    self.microphone = sr.Microphone()
+                    logger.warning("Using default microphone - USB microphone detection failed")
+                except Exception as default_e:
+                    logger.error(f"Failed to initialize default microphone: {default_e}")
+                    self.microphone = None
             
             # Raspberry Pi + USB microphone specific settings
             self.recognizer.energy_threshold = 200  # Lower threshold for USB mics
@@ -67,25 +84,56 @@ class SimpleSpeechRecognizer:
             self.recognizer.operation_timeout = None  # Disable operation timeout
             
             # Calibrate for ambient noise with longer duration for RPi + USB mic
-            with self.microphone as source:
-                logger.info("Calibrating USB microphone for ambient noise (Raspberry Pi optimized)...")
-                # Longer calibration for USB mics
-                self.recognizer.adjust_for_ambient_noise(source, duration=3)
-                
-                # Check if energy threshold is reasonable
-                threshold = self.recognizer.energy_threshold
-                logger.info(f"Energy threshold set to: {threshold}")
-                
-                # USB mics often need different thresholds
-                if threshold < 100:
-                    logger.warning("Energy threshold very low - forcing minimum for USB mic")
-                    self.recognizer.energy_threshold = 250
-                elif threshold > 4000:
-                    logger.warning("Energy threshold very high - capping for USB mic")
-                    self.recognizer.energy_threshold = 1000
-                
-                logger.info(f"Final energy threshold: {self.recognizer.energy_threshold}")
-                logger.success("USB microphone calibrated successfully")
+            if self.microphone is not None:
+                try:
+                    logger.info(f"Microphone object type: {type(self.microphone)}")
+                    logger.info(f"Microphone device index: {getattr(self.microphone, 'device_index', 'unknown')}")
+                    
+                    # Test if microphone can be opened before full calibration
+                    try:
+                        with self.microphone as source:
+                            # Quick test to see if the device can be opened
+                            pass
+                    except Exception as test_e:
+                        logger.warning(f"USB microphone test failed: {test_e}")
+                        # Try fallback to default microphone
+                        logger.info("Attempting fallback to default microphone...")
+                        try:
+                            self.microphone = sr.Microphone()
+                            logger.info("Fallback to default microphone successful")
+                        except Exception as fallback_e:
+                            logger.error(f"Fallback to default microphone failed: {fallback_e}")
+                            self.microphone = None
+                    
+                    # Only proceed with calibration if microphone is still available
+                    if self.microphone is not None:
+                        with self.microphone as source:
+                            logger.info("Calibrating microphone for ambient noise...")
+                            # Shorter calibration to avoid issues
+                            self.recognizer.adjust_for_ambient_noise(source, duration=1)
+                            
+                            # Check if energy threshold is reasonable
+                            threshold = self.recognizer.energy_threshold
+                            logger.info(f"Energy threshold set to: {threshold}")
+                            
+                            # Adjust thresholds for different microphone types
+                            if threshold < 100:
+                                logger.warning("Energy threshold very low - setting minimum")
+                                self.recognizer.energy_threshold = 250
+                            elif threshold > 4000:
+                                logger.warning("Energy threshold very high - capping")
+                                self.recognizer.energy_threshold = 1000
+                            
+                            logger.info(f"Final energy threshold: {self.recognizer.energy_threshold}")
+                            logger.success("Microphone calibrated successfully")
+                    
+                except Exception as calib_e:
+                    logger.error(f"Failed to calibrate microphone: {calib_e}")
+                    logger.error(f"Exception type: {type(calib_e)}")
+                    logger.warning("Continuing without calibration...")
+                    # Don't set microphone to None here, keep it for listening
+            else:
+                logger.error("Microphone object is None - skipping calibration")
                 
         except Exception as e:
             logger.error(f"Failed to initialize microphone: {e}")
