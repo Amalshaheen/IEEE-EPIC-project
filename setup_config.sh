@@ -40,6 +40,7 @@ echo "🐍 Checking Python packages..."
 python3 -c "import speech_recognition" 2>/dev/null && echo "✅ SpeechRecognition installed" || echo "❌ SpeechRecognition missing: pip install SpeechRecognition"
 python3 -c "import gtts" 2>/dev/null && echo "✅ gTTS installed" || echo "❌ gTTS missing: pip install gTTS"
 python3 -c "from google import genai" 2>/dev/null && echo "✅ Google GenAI installed" || echo "❌ Google GenAI missing: pip install google-genai"
+python3 -c "import tkinter" 2>/dev/null && echo "✅ Tkinter available" || echo "❌ Tkinter missing: on Ubuntu/Debian run: sudo apt-get install python3-tk"
 
 # Check audio tools
 echo ""

@@ -57,10 +57,10 @@ class FallbackSpeechRecognizer:
         with self.microphone as source:
             self.recognizer.adjust_for_ambient_noise(source)
     
-    def listen_and_recognize(self, language: str = "auto") -> Tuple[Optional[str], Optional[str]]:
+    def listen_and_recognize(self, language: str = "auto", timeout: int = 5) -> Tuple[Optional[str], Optional[str]]:
         try:
             with self.microphone as source:
-                audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=10)
+                audio = self.recognizer.listen(source, timeout=timeout, phrase_time_limit=10)
             
             if language == "auto":
                 # Try Malayalam first
