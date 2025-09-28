@@ -270,11 +270,11 @@ class SimpleVoiceAI:
     def get_greeting(self) -> str:
         """Get a random greeting"""
         greetings = [
-            "Hello! I saw your wave. How can I help you today?",
-            "Hi there! Your handshake got my attention. What's on your mind?",
-            "Greetings! I'm here to assist. What would you like to talk about?",
-            "Hello! Thanks for the wave. How are you doing today?",
-            "Hi! I detected your handshake. What can I do for you?"
+            "Hello! I'm SARAS. I saw your wave. How can I help you today?",
+            "Hi there! I'm SARAS, your assistant. Your handshake got my attention. What's on your mind?",
+            "Greetings! I'm SARAS, and I'm here to assist. What would you like to talk about?",
+            "Hello! I'm SARAS. Thanks for the wave. How are you doing today?",
+            "Hi! I'm SARAS. I detected your handshake. What can I do for you?"
         ]
         
         import random
@@ -283,11 +283,11 @@ class SimpleVoiceAI:
     def get_farewell(self) -> str:
         """Get a farewell message"""
         farewells = [
-            "Goodbye! Wave again anytime you want to chat.",
-            "See you later! I'll be here when you need me.",
-            "Take care! Just wave to start another conversation.",
-            "Bye for now! Looking forward to our next chat.",
-            "Farewell! I'm always ready for another handshake."
+            "Goodbye! This is SARAS. Wave again anytime you want to chat.",
+            "See you later! SARAS will be here when you need me.",
+            "Take care! Just wave to start another conversation with SARAS.",
+            "Bye for now! SARAS is looking forward to our next chat.",
+            "Farewell! I'm SARAS, and I'm always ready for another handshake."
         ]
         
         import random
