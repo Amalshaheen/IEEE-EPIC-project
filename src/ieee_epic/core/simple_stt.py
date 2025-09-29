@@ -145,25 +145,39 @@ class SimpleSpeechRecognizer:
             self.microphone = None
     
     def listen_for_speech(self, timeout: int = 10, phrase_time_limit: int = 15) -> Optional[sr.AudioData]:
-        """Listen for speech input"""
+        """Listen for speech input with improved error handling"""
         if not self.microphone:
             logger.error("Microphone not available")
             return None
         
         try:
-            with self.microphone as source:
-                logger.info("🎤 Listening for speech...")
-                
-                # Raspberry Pi optimization: adjust for ambient noise briefly before each listen
-                self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
-                
-                audio = self.recognizer.listen(
-                    source, 
-                    timeout=timeout,  # Increased timeout for RPi
-                    phrase_time_limit=phrase_time_limit  # Increased phrase time limit
-                )
-                logger.info("✅ Audio captured")
-                return audio
+            # Create a new context each time to avoid issues with previous contexts
+            logger.info("🎤 Listening for speech...")
+            
+            # Try to open the microphone safely
+            try:
+                with self.microphone as source:
+                    # Brief ambient noise adjustment
+                    try:
+                        self.recognizer.adjust_for_ambient_noise(source, duration=0.3)
+                    except Exception as ambient_e:
+                        logger.warning(f"Ambient noise adjustment failed: {ambient_e}")
+                    
+                    # Listen for audio with error handling
+                    audio = self.recognizer.listen(
+                        source, 
+                        timeout=timeout,
+                        phrase_time_limit=phrase_time_limit
+                    )
+                    logger.info("✅ Audio captured")
+                    return audio
+                    
+            except Exception as context_e:
+                logger.error(f"❌ Microphone context error: {context_e}")
+                # Try to reinitialize microphone if context fails
+                logger.info("Attempting to reinitialize microphone...")
+                self._reinitialize_microphone()
+                return None
                 
         except sr.WaitTimeoutError:
             logger.warning("⏰ Listening timeout - no speech detected")
@@ -171,7 +185,31 @@ class SimpleSpeechRecognizer:
             return None
         except Exception as e:
             logger.error(f"❌ Error while listening: {e}")
+            # Try to recover by reinitializing
+            self._reinitialize_microphone()
             return None
+    
+    def _reinitialize_microphone(self):
+        """Reinitialize microphone after errors"""
+        try:
+            logger.info("Reinitializing microphone...")
+            old_mic = self.microphone
+            self.microphone = None
+            
+            # Brief delay to let resources clean up
+            time.sleep(0.5)
+            
+            # Try to reinitialize
+            self._initialize_microphone()
+            
+            if self.microphone:
+                logger.success("Microphone reinitialized successfully")
+            else:
+                logger.error("Failed to reinitialize microphone")
+                
+        except Exception as e:
+            logger.error(f"Error during microphone reinitialization: {e}")
+            self.microphone = None
     
     def recognize_speech(self, audio_data: sr.AudioData, language: str = "auto") -> Tuple[Optional[str], Optional[str]]:
         """
