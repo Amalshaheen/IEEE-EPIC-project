@@ -234,6 +234,10 @@ class HandshakeVoiceAI:
         self.setup_gui()
         self.conversation_active = False
         self.handshake_detected_time = None
+        self.conversation_turns = 0
+        self.last_activity_time = None
+        self.max_turns_before_asking = 3  # Ask about continuing after 3 exchanges
+        self.inactivity_timeout = 60  # Ask about continuing after 60 seconds of inactivity
     
     def setup_backends(self):
         """Setup STT, TTS, and AI backends"""
@@ -545,6 +549,9 @@ class HandshakeVoiceAI:
             return
         
         self.conversation_active = True
+        # Reset conversation tracking
+        self.conversation_turns = 0
+        self.last_activity_time = time.time()
         
         try:
             # Generate and speak greeting
@@ -590,12 +597,32 @@ class HandshakeVoiceAI:
             try:
                 self.add_system_message(f"🎤 Listening for your response... (Attempt {attempt}/{max_attempts})")
                 
+                # Check for inactivity timeout
+                if self.last_activity_time and (time.time() - self.last_activity_time) > self.inactivity_timeout:
+                    if self.ask_continue_conversation():
+                        # Reset counters and continue listening
+                        self.conversation_turns = 0
+                        self.last_activity_time = time.time()
+                        attempt = 0
+                        continue
+                    else:
+                        break
+                
                 language = self.language_var.get()
                 text, detected_lang = self.stt.listen_and_recognize(language, timeout=10)
                 
                 if text and detected_lang:
+                    # Update activity tracking
+                    self.last_activity_time = time.time()
+                    self.conversation_turns += 1
+                    
                     lang_name = "Malayalam" if detected_lang == "ml" else "English"
                     self.add_message(f"You ({lang_name})", text, "#2980b9")
+                    
+                    # Check if user wants to end conversation naturally
+                    if self.should_end_conversation(text):
+                        self.add_system_message("👋 Ending conversation as requested")
+                        break
                     
                     # Generate AI response
                     self.add_system_message("🧠 AI thinking...")
@@ -609,13 +636,23 @@ class HandshakeVoiceAI:
                     if not success:
                         self.add_system_message("⚠️ TTS response failed")
                     
-                    # Ask if user wants to continue
-                    if self.ask_continue_conversation():
-                        # Reset attempts and continue listening
-                        attempt = 0
-                        continue
-                    else:
-                        break
+                    # Check if we should ask about continuing
+                    should_ask_continue = False
+                    
+                    # Ask after multiple turns
+                    if self.conversation_turns >= self.max_turns_before_asking:
+                        should_ask_continue = True
+                        
+                    # Don't ask immediately, just continue naturally and let inactivity timeout handle it
+                    if should_ask_continue:
+                        self.add_system_message("💬 Feel free to ask me anything else...")
+                        # Reset turn counter but continue conversation
+                        self.conversation_turns = 0
+                    
+                    # Continue conversation naturally
+                    attempt = 0
+                    continue
+                        
                 else:
                     self.add_system_message(f"❌ Could not understand speech (Attempt {attempt}/{max_attempts})")
                     if attempt < max_attempts:
@@ -628,41 +665,54 @@ class HandshakeVoiceAI:
                 break
         
         # End conversation
+        self.conversation_turns = 0
+        self.last_activity_time = None
         self.add_system_message("👋 Conversation ended. Wave again to start a new one!")
     
     def ask_continue_conversation(self):
         """Ask if user wants to continue the conversation"""
-        continue_prompt = "Would you like to continue our conversation? Say 'yes' to continue or 'no' to end."
+        continue_prompt = "Is there anything else I can help you with today?"
         self.add_message("AI Assistant", continue_prompt, "#27ae60")
         
         # Speak the prompt
         self.tts.speak(continue_prompt, "en")
         
         try:
-            self.add_system_message("🎤 Listening for yes/no...")
-            text, detected_lang = self.stt.listen_and_recognize("en", timeout=8)
+            self.add_system_message("🎤 Listening for your response...")
+            text, detected_lang = self.stt.listen_and_recognize("en", timeout=10)
             
             if text:
                 text_lower = text.lower()
-                if any(word in text_lower for word in ["yes", "yeah", "continue", "sure", "okay"]):
+                if any(word in text_lower for word in ["yes", "yeah", "sure", "okay", "more", "another", "continue"]):
                     self.add_message("You", text, "#2980b9")
-                    self.add_system_message("✅ Continuing conversation...")
+                    self.add_system_message("✅ Continuing our conversation...")
                     return True
-                elif any(word in text_lower for word in ["no", "stop", "end", "bye", "goodbye"]):
+                elif any(word in text_lower for word in ["no", "nothing", "stop", "end", "bye", "goodbye", "done", "that's all"]):
                     self.add_message("You", text, "#2980b9")
-                    self.add_system_message("👋 Ending conversation as requested")
+                    self.add_system_message("👋 Thank you for chatting! Wave again anytime.")
                     return False
                 else:
-                    self.add_message("You", text, "#2980b9")
-                    self.add_system_message("🤔 I'll assume you want to end the conversation")
-                    return False
+                    # If user asks another question, continue naturally
+                    # Don't consume this input - let it be processed as a new question
+                    return True
             else:
-                self.add_system_message("🔇 No response heard - ending conversation")
+                self.add_system_message("🔇 I'll assume you're done for now - wave again anytime!")
                 return False
                 
         except Exception as e:
             logger.error(f"Error asking to continue: {e}")
             return False
+    
+    def should_end_conversation(self, text: str) -> bool:
+        """Check if user wants to end conversation naturally"""
+        end_phrases = [
+            "goodbye", "bye", "see you", "talk later", "that's all",
+            "thanks", "thank you", "stop", "end", "quit", "done",
+            "വിട", "നന്ദി"  # Malayalam goodbye phrases
+        ]
+        
+        text_lower = text.lower()
+        return any(phrase in text_lower for phrase in end_phrases)
     
     def generate_ai_response(self, text: str, language: str) -> str:
         """Generate AI response to user input"""
@@ -733,6 +783,9 @@ class HandshakeVoiceAI:
     def handle_manual_conversation(self):
         """Handle manual conversation flow"""
         self.conversation_active = True
+        # Reset conversation tracking
+        self.conversation_turns = 0
+        self.last_activity_time = time.time()
         self.add_system_message("🎤 Manual conversation started - speak now!")
         
         try:
